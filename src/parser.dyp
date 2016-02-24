@@ -1,0 +1,438 @@
+{
+open Ast
+open Dyp
+
+let get_loc d = make_loc (d.Dyp.symbol_start_pos ()) (d.Dyp.symbol_end_pos ())
+
+let to_name dyp t = if (t == "_") then SUnderscore(get_loc dyp) else SName(get_loc dyp, t)
+
+}
+
+%token IF THENCOLON ELSECOLON ELSEIF ELSE END AND OR ISEQUALEQUAL ISEQUALTILDE ISSPACESHIP ISNOTEQUALEQUAL
+%token ISNOTEQUALTILDE ISNOTSPACESHIP ISNOT IS SATISFIES SATISFIESNOT RAISESOTHER RAISESNOT
+%token RAISESSATISFIES RAISESVIOLATES RAISES THINARROW THICKARROW COLONCOLON COLONEQUALS
+%token COLON CARET BAR SPACESHIP LEQ GEQ EQUALEQUAL EQUALTILDE NEQ LT GT PLUS DASH STAR SLASH PARENSPACE
+%token PARENNOSPACE RPAREN LBRACE RBRACE DOT COMMA BANG PERCENT SEMI BACKSLASH WS IMPORT INCLUDE
+%token PROVIDE_TYPES PROVIDE AS NEWTYPE TYPE_LET TYPE VAR REC LETREC LET FUN LAM TRUE FALSE METHOD
+%token DOC WHERE CHECKCOLON EXAMPLESCOLON CHECK CASES WHEN ASKCOLON OTHERWISECOLON DATA WITH SHARING
+%token SHADOW REF BLOCK FOR FROM LAZY EOF LBRACK RBRACK EQUALS WITHCONSTRUCTOR DATATYPE
+%token DERIVING UNTERMINATED_STRING UNTERMINATED_BLOCK_COMMENT COMMENT LANGLE RANGLE
+%token <string> NAME
+%token <string> STRING
+%token <string> BAD_OPER
+%token <string> UNKNOWN
+%token <BatNum.num> NUMBER
+%token <float> ROUGHNUM
+
+%start program
+
+%parser
+
+program : prelude block EOF { let (provide,provide_types,imports) = $1 in
+  SProgram(get_loc dyp, provide, provide_types, imports, $2)
+}
+
+end : END
+  | SEMI
+
+prelude : provide_stmt? provide_types_stmt? import_stmt* { let provide = match $1 with
+  | Some(p) -> p
+  | None -> SProvideNone(get_loc dyp) in
+  let provide_types = match $2 with
+  | Some(pt) -> pt
+  | None -> SProvideTypesNone(get_loc dyp) in
+  (provide,provide_types,$3) }
+
+import_stmt : IMPORT import_source AS NAME { SImport(get_loc dyp, $2, to_name dyp $4) }
+  | INCLUDE import_source { SInclude(get_loc dyp, $2) }
+  | IMPORT NAME [COMMA NAME]* FROM import_source { SImportFields(get_loc dyp, (List.map (to_name dyp) ($2::$3)), $5) }
+
+import_source : import_special { $1 }
+  | import_name { $1 }
+  | import_string { $1 }
+
+import_special : NAME PARENNOSPACE STRING [COMMA STRING]* RPAREN {
+  SSpecialImport(get_loc dyp, $1, $3::$4)
+}
+
+import_name : NAME { SConstImport(get_loc dyp, $1) }
+import_string : STRING { SFileImport(get_loc dyp, $1) }
+
+provide_stmt : PROVIDE stmt end { SProvide(get_loc dyp, $2) }
+  | PROVIDE STAR { SProvideAll(get_loc dyp) }
+
+/* *might* be $1.fields for record_ann */
+provide_types_stmt : PROVIDE_TYPES record_ann { match $2 with
+  | ARecord(_,l) -> SProvideTypes(get_loc dyp, l)
+  | _ -> failwith "Internal parse error: provide_types_stmt (1)"
+}
+  | PROVIDE_TYPES STAR { SProvideTypesAll(get_loc dyp) }
+
+block : stmt* { SBlock(get_loc dyp, $1) }
+
+stmt : type_expr { $1 }
+  | newtype_expr { $1 }
+  | let_expr { $1 }
+  | fun_expr { $1 }
+  | data_expr { $1 }
+/*  | datatype_expr { $1 }*/
+  | when_expr { $1 }
+  | var_expr { $1 }
+  | rec_expr { $1 }
+  | assign_expr { $1 }
+  | check_test { $1 } 
+  | check_expr { $1 }
+  | contract_stmt { $1 }
+
+type_expr : TYPE NAME EQUALS ann { SType(get_loc dyp, to_name dyp $2, $4) }
+newtype_expr : NEWTYPE NAME AS NAME { SNewtype(get_loc dyp, to_name dyp $2, to_name dyp $4) }
+let_expr : toplevel_binding EQUALS binop_expr { SLet(get_loc dyp, $1, $3, false) }
+binding : SHADOW? NAME [COLONCOLON ann]? { let shadows = match $1 with
+  | Some(_) -> true
+  | None -> false in
+  let ann = match $1 with
+  | Some(a) -> a
+  | None -> ABlank in
+  SBind(get_loc dyp, shadows, to_name dyp $2, ann)
+}
+toplevel_binding : binding { $1 }
+multi_let_expr : LET let_binding_elt* let_binding COLON block end { SLetExpr(get_loc dyp, $2 @ [$3], $5) }
+let_binding_elt : let_binding COMMA { $1 }
+let_binding : let_expr { match $1 with
+    | SLet(l,b,e,_) -> SLetBind(l,b,e)
+    | _ -> failwith "Internal parse error: let_binding (1)"
+}
+  | var_expr { match $1 with
+    | SLet(l,b,e,_) -> SVarBind(l,b,e)
+    | _ -> failwith "Internal parse error: let_binding (2)"
+}
+letrec_expr : LETREC letrec_binding* let_expr COLON block end { match $3 with
+  | SLet(_,b,e,_) -> SLetrec(get_loc dyp, $2 @ [SLetrecBind(get_loc dyp,b,e)], $5)
+  | _ -> failwith "Internal parse error: letrec_expr (1)" }
+letrec_binding : let_expr COMMA { match $1 with
+  | SLet(_,b,e,_) -> SLetrecBind(get_loc dyp, b, e)
+  | _ -> failwith "Internal parse error: letrec_binding (1)"
+}
+
+type_bind : NAME EQUALS ann { STypeBind(get_loc dyp, to_name dyp $1, $3) }
+newtype_bind : NEWTYPE NAME AS NAME { SNewtypeBind(get_loc dyp, to_name dyp $2, to_name dyp $4) }
+
+type_let_bind : type_bind { $1 } | newtype_bind { $1 }
+type_let_bind_elt : type_let_bind COMMA { $1 }
+type_let_expr : TYPE_LET type_let_bind_elt* type_let_bind COLON block end { STypeLetExpr(get_loc dyp, $2 @ [$3], $5) }
+
+contract_stmt : NAME COLONCOLON ann { SContract(get_loc dyp, to_name dyp $1, $3) }
+  | NAME COLONCOLON noparen_arrow_ann { SContract(get_loc dyp, to_name dyp $1, $3) }
+
+fun_expr: FUN NAME fun_header COLON doc_string block where_clause end {
+  let (params,args,retann) = $3 in
+  SFun(get_loc dyp,$2, (List.map (to_name dyp) params),args,retann,$5,$6,$7)
+}
+fun_header: ty_params args return_ann { ($1,$2,$3) }
+ty_params: [[LT | LANGLE] list_ty_param* NAME [GT | RANGLE] { $2 @ [$3] }]? {
+match $1 with
+  | Some(tp) -> tp
+  | None -> []
+}
+list_ty_param: NAME COMMA { $1 }
+
+args: PARENNOSPACE [list_arg_elt* binding {$1 @ [$2]}]? RPAREN { match $2 with
+  | Some(args) -> args
+  | None -> []
+}
+list_arg_elt: binding COMMA { $1 }
+return_ann: [THINARROW ann]? { match $1 with
+  | Some(ann) -> ann
+  | None -> ABlank
+}
+doc_string: [DOC STRING]? { match $1 with
+  | Some(s) -> s
+  | None -> ""
+}
+where_clause: [WHERE block]? { $1 }
+
+check_expr: CHECK STRING COLON block end { SCheck(get_loc dyp, Some $2, $4, true) }
+  | CHECKCOLON block end { SCheck(get_loc dyp, None, $2, true) }
+  | EXAMPLESCOLON block end { SCheck(get_loc dyp, None, $2, false) }
+check_test: binop_expr check_op [PERCENT PARENSPACE binop_expr RPAREN {$3}]? binop_expr {
+  SCheckTest(get_loc dyp, $2, $3, $1, Some($4))
+}
+          | binop_expr check_op [PERCENT PARENNOSPACE binop_expr RPAREN {$3}] binop_expr {
+  SCheckTest(get_loc dyp, $2, Some($3), $1, Some($4))
+}
+          | binop_expr check_op_postfix { SCheckTest(get_loc dyp, $2, None, $1, None) }
+          | binop_expr { $1 }
+
+
+data_expr: DATA NAME ty_params data_mixins COLON first_data_variant? data_variant* data_sharing where_clause end {
+  let variants = match $6 with
+  | Some(fst) -> fst::$7
+  | None -> $7 in
+  SData(get_loc dyp, $2, (List.map (to_name dyp) $3), $4, variants, $8, $9)
+}
+data_mixins: [DERIVING mixins]? { match $1 with
+  | Some(mixins) -> mixins
+  | None -> [] }
+variant_constructor: NAME variant_members { (get_loc dyp, $1, $2) }
+first_data_variant: variant_constructor data_with { let (pos,name,args) = $1 in
+  SVariant(get_loc dyp, pos, name, args, $2) }
+  | NAME data_with { SSingletonVariant(get_loc dyp, $1, $2) }
+data_variant: BAR variant_constructor data_with { let (pos,name,args) = $2 in
+  SVariant(get_loc dyp, pos, name, args, $3) }
+  | BAR NAME data_with { SSingletonVariant(get_loc dyp, $2, $3) }
+variant_members: PARENNOSPACE [list_variant_member* variant_member {$1 @ [$2]}]? RPAREN { match $2 with
+  | Some(vm) -> vm
+  | None -> []
+}
+list_variant_member: variant_member COMMA { $1 }
+variant_member: REF? binding { let memtype = match $1 with
+  | Some(_) -> SMutable
+  | None -> SNormal in
+  SVariantMember(get_loc dyp, memtype, $2)
+}
+data_with: [WITH fields]? { match $1 with
+  | Some(f) -> f
+  | None -> []
+}
+data_sharing: [SHARING fields]? { match $1 with
+  | Some(f) -> f
+  | None -> []
+}
+
+mixins: list_mixin* binop_expr { $1 @ [$2] }
+list_mixin: binop_expr COMMA { $1 }
+/*
+datatype_expr: DATATYPE NAME ty_params COLON first_datatype_variant? datatype_variant* where_clause end
+first_datatype_variant: variant_constructor constructor_clause | NAME constructor_clause
+datatype_variant: BAR variant_constructor constructor_clause | BAR NAME constructor_clause
+constructor_clause: WITHCONSTRUCTOR PARENSPACE NAME RPAREN COLON block end
+  | WITHCONSTRUCTOR PARENNOSPACE NAME RPAREN COLON block end
+*/
+var_expr: VAR toplevel_binding EQUALS binop_expr { SVar(get_loc dyp, $2, $4) }
+rec_expr: REC toplevel_binding EQUALS binop_expr { SRec(get_loc dyp, $2, $4) }
+assign_expr: NAME COLONEQUALS binop_expr { SAssign(get_loc dyp, to_name dyp $1, $3) }
+
+when_expr: WHEN binop_expr COLON block end { SWhen(get_loc dyp, $2, $4) }
+
+binop_expr: expr binop binop_expr { SOp(get_loc dyp, $2, $1, $3) }
+  | expr { $1 }
+
+binop: PLUS { "op+" }
+  | DASH { "op-" }
+  | STAR { "op*" }
+  | SLASH { "op/" }
+  | LEQ  { "op<=" }
+  | GEQ { "op>=" }
+  | EQUALEQUAL { "op==" }
+  | SPACESHIP { "op<=>" }
+  | EQUALTILDE { "op=~" }
+  | NEQ { "op<>" }
+  | LT { "op<" }
+  | GT { "op>" }
+  | AND { "opand" }
+  | OR { "opor" }
+  | CARET { "op^" }
+
+check_op: IS { SOpIs }
+  | ISEQUALEQUAL { SOpIsOp("op==") }
+  | ISEQUALTILDE { SOpIsOp("op=~") }
+  | ISSPACESHIP { SOpIsOp("op<=>") }
+  | ISNOT { SOpIsNot }
+  | ISNOTEQUALEQUAL { SOpIsNotOp("op==") }
+  | ISNOTEQUALTILDE { SOpIsNotOp("op=~") }
+  | ISNOTSPACESHIP { SOpIsNotOp("op<=>") }
+  | RAISES { SOpRaises }
+  | RAISESOTHER { SOpRaisesOther }
+  | SATISFIES { SOpSatisfies }
+  | SATISFIESNOT { SOpSatisfiesNot }
+  | RAISESSATISFIES { SOpRaisesSatisfies }
+  | RAISESVIOLATES { SOpRaisesViolates }
+
+check_op_postfix: RAISESNOT { SOpRaisesNot }
+
+expr: paren_expr { $1 }
+    | id_expr { $1 }
+    | prim_expr { $1 }
+    | lambda_expr { $1 }
+    | method_expr { $1 }
+    | app_expr { $1 }
+    | obj_expr { $1 }
+    | dot_expr { $1 }
+    | get_bang_expr { $1 }
+    | update_expr { $1 }
+    | extend_expr { $1 }
+    | if_expr { $1 }
+    | if_pipe_expr { $1 }
+    | cases_expr { $1 }
+    | for_expr { $1 }
+    | user_block_expr { $1 }
+    | inst_expr { $1 }
+    | multi_let_expr { $1 }
+    | letrec_expr { $1 }
+    | type_let_expr { $1 }
+    | construct_expr { $1 }
+
+paren_expr: PARENSPACE binop_expr RPAREN { SParen(get_loc dyp, $2) }
+
+id_expr: NAME { SId(get_loc dyp, to_name dyp $1) }
+
+prim_expr: num_expr { $1 }| bool_expr { $1 } | string_expr { $1 }
+
+num_expr: NUMBER { SNum(get_loc dyp, $1 ) }
+bool_expr: TRUE { SBool(get_loc dyp, true) } | FALSE { SBool(get_loc dyp, false) }
+string_expr: STRING { SStr(get_loc dyp, $1) }
+
+lambda_expr: LAM fun_header COLON doc_string block where_clause end {
+  let (params,args,retann) = $2 in
+  SLam(get_loc dyp, (List.map (to_name dyp) params), args, retann, $4, $5, $6)
+}
+
+method_expr: METHOD fun_header COLON doc_string block where_clause end {
+  let (params,args,retann) = $2 in
+  SMethod(get_loc dyp, (List.map (to_name dyp) params), args, retann, $4, $5, $6)
+}
+
+app_expr: expr app_args { SApp(get_loc dyp, $1, $2) }
+
+
+app_args: PARENNOSPACE [app_arg_elt* binop_expr {$1 @ [$2]}]? RPAREN { match $2 with
+  | Some(a) -> a
+  | None -> []
+}
+app_arg_elt: binop_expr COMMA { $1 }
+
+
+inst_expr: expr LANGLE inst_elt* ann RANGLE { SInstantiate(get_loc dyp, $1, $3) }
+inst_elt: ann COMMA { $1 }
+
+obj_expr: LBRACE obj_fields RBRACE {SObj(get_loc dyp, $2) } | LBRACE RBRACE { SObj(get_loc dyp, []) }
+obj_fields: list_obj_field* obj_field COMMA? { $1 @ [$2] }
+list_obj_field: obj_field COMMA { $1 }
+obj_field: key COLON binop_expr { SDataField(get_loc dyp, $1, $3) }
+     | REF key [COLONCOLON ann]? COLON binop_expr { let ann = match $3 with
+  | Some(a) -> a
+  | None -> ABlank in
+  SMutableField(get_loc dyp, $2, ann, $5)
+}
+     | key fun_header COLON doc_string block where_clause end { let (p,a,r) = $2 in
+  SMethodField(get_loc dyp, $1, (List.map (to_name dyp) p), a, r, $4, $5, $6)
+}
+
+fields: list_field* field COMMA? { $1 @ [$2] }
+list_field: field COMMA { $1 }
+field: key COLON binop_expr { SDataField(get_loc dyp, $1, $3) }
+     | key fun_header COLON doc_string block where_clause end {
+  let (param,args,ret) = $2 in
+  SMethodField(get_loc dyp, $1, (List.map (to_name dyp) param), args, ret, $4, $5, $6)
+}
+key: NAME { $1 }
+
+construct_expr: LBRACK construct_modifier binop_expr COLON [list_elt* binop_expr {($1 @ [$2])}]? RBRACK {
+  let args = match $5 with
+  | Some(a) -> a
+  | None -> [] in
+  SConstruct(get_loc dyp, $2, $3, args)
+}
+construct_modifier: LAZY? { match $1 with
+  | Some(_) -> SConstructLazy
+  | None -> SConstructNormal
+}
+list_elt: binop_expr COMMA { $1 }
+
+dot_expr: expr DOT NAME { SDot(get_loc dyp, $1, $3) }
+
+get_bang_expr: expr BANG NAME { SGetBang(get_loc dyp, $1, $3) }
+
+extend_expr: expr DOT LBRACE fields RBRACE { SExtend(get_loc dyp, $1, $4) }
+update_expr: expr BANG LBRACE fields RBRACE { SUpdate(get_loc dyp, $1, $4) }
+
+if_expr: IF binop_expr COLON block else_if* [ELSECOLON block]? end {
+  match $6 with
+  | Some(els) -> SIfElse(get_loc dyp, (SIfBranch(get_loc dyp, $2, $4))::$5, els)
+  | None -> SIf(get_loc dyp, (SIfBranch(get_loc dyp, $2, $4))::$5)
+}
+else_if: ELSEIF binop_expr COLON block {
+  SIfBranch(get_loc dyp, $2, $4)
+}
+if_pipe_expr: ASKCOLON if_pipe_branch* [BAR OTHERWISECOLON block]? end {
+  match $3 with
+  | Some(otherwise) -> SIfPipeElse(get_loc dyp, $2, otherwise)
+  | None -> SIfPipe(get_loc dyp, $2)
+}
+if_pipe_branch: BAR binop_expr THENCOLON block {
+  SIfPipeBranch(get_loc dyp, $2, $4)
+}
+
+cases_binding: REF? binding { let btype = match $1 with
+  | Some(_) -> SCasesBindRef
+  | None -> SCasesBindNormal in
+  SCasesBind(get_loc dyp, btype, $2)
+}
+list_cases_arg_elt: cases_binding COMMA { $1 }
+cases_args: PARENNOSPACE [list_cases_arg_elt* cases_binding {($1 @ [$2])}]? RPAREN { match $2 with
+  | Some(args) -> args
+  | None -> []
+}
+cases_expr: CASES PARENSPACE ann RPAREN binop_expr COLON cases_branch* [BAR ELSE THICKARROW block]? end {
+  match $8 with
+  | Some(els) -> SCasesElse(get_loc dyp, $3, $5, $7, els)
+  | None -> SCases(get_loc dyp, $3, $5, $7)
+}
+  | CASES PARENNOSPACE ann RPAREN binop_expr COLON cases_branch* [BAR ELSE THICKARROW block]? end {
+  match $8 with
+  | Some(els) -> SCasesElse(get_loc dyp, $3, $5, $7, els)
+  | None -> SCases(get_loc dyp, $3, $5, $7)
+}
+cases_branch: BAR NAME cases_args? THICKARROW block {
+  match $3 with
+  | Some(args) -> SCasesBranch(get_loc dyp, get_loc dyp, $2, args, $5)
+  | None -> SSingletonCasesBranch(get_loc dyp, get_loc dyp, $2, $5) 
+}
+
+for_bind: binding FROM binop_expr { SForBind(get_loc dyp, $1, $3) }
+for_bind_elt: for_bind COMMA { $1 }
+for_expr: FOR expr PARENNOSPACE [for_bind_elt* for_bind {$1 @ [$2]}]? RPAREN return_ann COLON block end {
+  let binds = match $4 with
+  | Some(b) -> b
+  | None -> [] in
+  SFor(get_loc dyp, $2, binds, $6, $8)
+}
+
+user_block_expr: BLOCK block end { SUserBlock(get_loc dyp, $2) }
+
+ann: name_ann { $1 }| record_ann { $1 }| arrow_ann { $1 }| app_ann { $1 }| pred_ann { $1 }| dot_ann { $1 }
+
+name_ann: NAME { if $1 == "Any" then AAny else AName(get_loc dyp, to_name dyp $1) }
+record_ann: LBRACE [list_ann_field* ann_field {$1 @ [$2]}]? RBRACE {match $2 with
+  | Some(fields) -> ARecord(get_loc dyp, fields)
+  | None -> ARecord(get_loc dyp, [])
+}
+list_ann_field: ann_field COMMA { $1 }
+ann_field: NAME COLONCOLON ann { AField(get_loc dyp, $1, $3) }
+
+noparen_arrow_ann: [arrow_ann_elt* ann {$1 @ [$2]}]? THINARROW ann { let args = match $1 with
+  | Some(args) -> args
+  | None -> [] in
+  AArrow(get_loc dyp, args, $3, false) }
+  
+arrow_ann: PARENSPACE [arrow_ann_elt* ann {$1 @ [$2]}]? THINARROW ann RPAREN {
+  let args = match $2 with
+    | Some(a) -> a
+    | None -> [] in
+  AArrow(get_loc dyp, args, $4, true)
+}
+  | PARENNOSPACE [arrow_ann_elt* ann {$1 @ [$2]}]? THINARROW ann RPAREN {
+  let args = match $2 with
+    | Some(a) -> a
+    | None -> [] in
+  AArrow(get_loc dyp, args, $4, true)
+}
+arrow_ann_elt: ann COMMA { $1 }
+
+app_ann: [name_ann | dot_ann] LANGLE app_ann_elt* ann RANGLE { AApp(get_loc dyp, $1, $3 @ [$4]) }
+app_ann_elt: ann COMMA { $1 }
+
+pred_ann: ann PERCENT PARENSPACE id_expr RPAREN { APred(get_loc dyp, $1, $4) }
+  | ann PERCENT PARENNOSPACE id_expr RPAREN { APred(get_loc dyp, $1, $4) }
+
+dot_ann : NAME DOT NAME { ADot(get_loc dyp, to_name dyp $1, $3) }

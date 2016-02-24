@@ -1,0 +1,14 @@
+S ./src
+S ./test
+
+B _build
+
+PKG oUnit
+PKG dyp
+PKG ANSITerminal
+PKG batteries
+PKG extlib
+PKG unix
+PKG sexplib
+
+EXT ounit
