@@ -1977,3 +1977,4 @@ and sexp_of_expr e =
 
 
 let prog_to_string p = Sexp.to_string_hum (sexp_of_program p)
+let expr_to_string e = Sexp.to_string_hum (sexp_of_expr e)
