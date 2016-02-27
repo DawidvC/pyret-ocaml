@@ -388,786 +388,519 @@ let block_ids b = match b with
 let toplevel_ids prog = match prog with
   | SProgram(_,_,_,_,b) -> block_ids b
 
+class virtual ['name_ret,
+               'program_ret,
+               'import_type_ret,
+               'import_ret,
+               'provide_ret,
+               'provide_types_ret,
+               'let_bind_ret,
+               'letrec_bind_ret,
+               'type_let_bind_ret,
+               'defined_value_ret,
+               'defined_type_ret,
+               'expr_ret,
+               'bind_ret,
+               'member_ret,
+               'for_bind_ret,
+               'variant_member_ret,
+               'variant_ret,
+               'if_branch_ret,
+               'if_pipe_branch_ret,
+               'cases_bind_ret,
+               'cases_branch_ret,
+               'ann_ret,
+               'a_field_ret] ast_visitor_base = object(self)
+    method visit_name = function
+      | SUnderscore(l) -> self#s_underscore l
+      | SName(l,s) -> self#s_name (l,s)
+      | SGlobal(s) -> self#s_global s
+      | STypeGlobal(s) -> self#s_type_global s
+      | SAtom(s,i) -> self#s_atom (s,i)
 
-let expr_loc = function
-  | SModule (l,_,_,_,_,_,_) -> l
-  | STypeLetExpr (l,_,_) -> l
-  | SLetExpr (l,_,_) -> l
-  | SLetrec (l,_,_) -> l
-  | SHintExp (l,_,_) -> l
-  | SInstantiate (l,_,_) -> l
-  | SBlock (l,_) -> l
-  | SUserBlock (l,_) -> l
-  | SFun (l,_,_,_,_,_,_,_) -> l
-  | SType (l,_,_) -> l
-  | SNewtype (l,_,_) -> l
-  | SVar (l,_,_) -> l
-  | SRec (l,_,_) -> l
-  | SLet (l,_,_,_) -> l
-  | SRef (l,_) -> l
-  | SContract (l,_,_) -> l
-  | SWhen (l,_,_) -> l
-  | SAssign (l,_,_) -> l
-  | SIfPipe (l,_) -> l
-  | SIfPipeElse (l,_,_) -> l
-  | SIf (l,_) -> l
-  | SIfElse (l,_,_) -> l
-  | SCases (l,_,_,_) -> l
-  | SCasesElse (l,_,_,_,_) -> l
-  | SOp (l,_,_,_) -> l
-  | SCheckTest (l,_,_,_,_) -> l
-  | SCheckExpr (l,_,_) -> l
-  | SParen (l,_) -> l
-  | SLam (l,_,_,_,_,_,_) -> l
-  | SMethod (l,_,_,_,_,_,_) -> l
-  | SExtend (l,_,_) -> l
-  | SUpdate (l,_,_) -> l
-  | SObj (l,_) -> l
-  | SArray (l,_) -> l
-  | SConstruct (l,_,_,_) -> l
-  | SApp (l,_,_) -> l
-  | SPrimApp (l,_,_) -> l
-  | SPrimVal (l,_) -> l
-  | SId (l,_) -> l
-  | SIdVar (l,_) -> l
-  | SIdLetrec (l,_,_) -> l
-  | SUndefined l-> l
-  | SSrcloc (l,_) -> l
-  | SNum (l,_) -> l
-  | SFrac (l,_,_) -> l
-  | SBool (l,_) -> l
-  | SStr (l,_) -> l
-  | SDot (l,_,_) -> l
-  | SGetBang (l,_,_) -> l
-  | SBracket (l,_,_) -> l
-  | SData (l,_,_,_,_,_,_) -> l
-  | SDataExpr (l,_,_,_,_,_,_,_) -> l
-  | SFor (l,_,_,_,_) -> l
-  | SCheck (l,_,_,_) -> l
+    method visit_program = function
+      | SProgram(l,p,pt,il,e) -> self#s_program (l,p,pt,il,e)
 
-module type AST_DISPATCH = sig
-  type name_ret
-  type program_ret
-  type import_type_ret
-  type import_ret
-  type provide_ret
-  type provide_types_ret
-  type let_bind_ret
-  type letrec_bind_ret
-  type type_let_bind_ret
-  type defined_value_ret
-  type defined_type_ret
-  type expr_ret
-  type bind_ret
-  type member_ret
-  type for_bind_ret
-  type variant_member_ret
-  type variant_ret
-  type if_branch_ret
-  type if_pipe_branch_ret
-  type cases_bind_ret
-  type cases_branch_ret
-  type ann_ret
-  type a_field_ret
+    method visit_import_type = function
+      | SFileImport(l,s) -> self#s_file_import(l,s)
+      | SConstImport(l,s) -> self#s_const_import(l,s)
+      | SSpecialImport(l,s,sl) -> self#s_special_import(l,s,sl)
 
-    val visit_name : name -> name_ret
+    method visit_import = function
+      | SInclude(a,b) -> self#s_include(a,b)
+      | SImport(a,b,c) -> self#s_import(a,b,c)
+      | SImportTypes(a,b,c,d) -> self#s_import_types(a,b,c,d)
+      | SImportFields(a,b,c) -> self#s_import_fields(a,b,c)
+      | SImportComplete(a,b,c,d,e,f) -> self#s_import_complete(a,b,c,d,e,f)
 
-    val visit_program : program -> program_ret
+    method visit_provide = function
+      | SProvide(a,b) -> self#s_provide(a,b)
+      | SProvideComplete(a,b,c,d) -> self#s_provide_complete(a,b,c,d)
+      | SProvideAll(a) -> self#s_provide_all(a)
+      | SProvideNone(a) -> self#s_provide_none(a)
 
-    val visit_import_type : import_type -> import_type_ret
+    method visit_provide_types = function
+      | SProvideTypes(a,b) -> self#s_provide_types(a,b)
+      | SProvideTypesAll(a) -> self#s_provide_types_all(a)
+      | SProvideTypesNone(a) -> self#s_provide_types_none(a)
 
-    val visit_import : import -> import_ret
+    method visit_let_bind = function
+      | SLetBind (a,b,c) -> self#s_let_bind(a,b,c)
+      | SVarBind (a,b,c) -> self#s_var_bind(a,b,c)
 
-    val visit_provide : provide -> provide_ret
+    method visit_letrec_bind = function
+      | SLetrecBind(l,b,e) -> self#s_letrec_bind(l,b,e)
 
-    val visit_provide_types : provide_types -> provide_types_ret
+    method visit_type_let_bind = function
+      | STypeBind(l,n,a) -> self#s_type_bind(l,n,a)
+      | SNewtypeBind(l,n1,n2) -> self#s_newtype_bind(l,n1,n2)
 
-    val visit_let_bind : let_bind -> let_bind_ret
+    method visit_defined_value = function
+      | SDefinedValue(s,e) -> self#s_defined_value(s,e)
 
-    val visit_letrec_bind : letrec_bind -> letrec_bind_ret
+    method visit_defined_type = function
+      | SDefinedType(s,a) -> self#s_defined_type(s,a)
 
-    val visit_type_let_bind : type_let_bind -> type_let_bind_ret
+    method visit_expr = function
+      | SModule(a,b,c,d,e,f,g) -> self#s_module(a,b,c,d,e,f,g)
+      | STypeLetExpr(a,b,c) -> self#s_type_let_expr(a,b,c)
+      | SLetExpr(a,b,c) -> self#s_let_expr(a,b,c)
+      | SLetrec(a,b,c) -> self#s_letrec(a,b,c)
+      | SHintExp(a,b,c) -> self#s_hint_exp(a,b,c)
+      | SInstantiate(a,b,c) -> self#s_instantiate(a,b,c)
+      | SBlock(a,b) -> self#s_block(a,b)
+      | SUserBlock(a,b) -> self#s_user_block(a,b)
+      | SFun(a,b,c,d,e,f,g,h) -> self#s_fun(a,b,c,d,e,f,g,h)
+      | SType(a,b,c) -> self#s_type(a,b,c)
+      | SNewtype(a,b,c) -> self#s_newtype(a,b,c)
+      | SVar(a,b,c) -> self#s_var(a,b,c)
+      | SRec(a,b,c) -> self#s_rec(a,b,c)
+      | SLet(a,b,c,d) -> self#s_let(a,b,c,d)
+      | SRef(a,b) -> self#s_ref(a,b)
+      | SContract(a,b,c) -> self#s_contract(a,b,c)
+      | SWhen(a,b,c) -> self#s_when(a,b,c)
+      | SAssign(a,b,c) -> self#s_assign(a,b,c)
+      | SIfPipe(a,b) -> self#s_if_pipe(a,b)
+      | SIfPipeElse(a,b,c) -> self#s_if_pipe_else(a,b,c)
+      | SIf(a,b) -> self#s_if(a,b)
+      | SIfElse(a,b,c) -> self#s_if_else(a,b,c)
+      | SCases(a,b,c,d) -> self#s_cases(a,b,c,d)
+      | SCasesElse(a,b,c,d,e) -> self#s_cases_else(a,b,c,d,e)
+      | SOp(a,b,c,d) -> self#s_op(a,b,c,d)
+      | SCheckTest(a,b,c,d,e) -> self#s_check_test(a,b,c,d,e)
+      | SCheckExpr(a,b,c) -> self#s_check_expr(a,b,c)
+      | SParen(a,b) -> self#s_paren(a,b)
+      | SLam(a,b,c,d,e,f,g) -> self#s_lam(a,b,c,d,e,f,g)
+      | SMethod(a,b,c,d,e,f,g) -> self#s_method(a,b,c,d,e,f,g)
+      | SExtend(a,b,c) -> self#s_extend(a,b,c)
+      | SUpdate(a,b,c) -> self#s_update(a,b,c)
+      | SObj(a,b) -> self#s_obj(a,b)
+      | SArray(a,b) -> self#s_array(a,b)
+      | SConstruct(a,b,c,d) -> self#s_construct(a,b,c,d)
+      | SApp(a,b,c) -> self#s_app(a,b,c)
+      | SPrimApp(a,b,c) -> self#s_prim_app(a,b,c)
+      | SPrimVal(a,b) -> self#s_prim_val(a,b)
+      | SId(a,b) -> self#s_id(a,b)
+      | SIdVar(a,b) -> self#s_id_var(a,b)
+      | SIdLetrec(a,b,c) -> self#s_id_letrec(a,b,c)
+      | SUndefined(a) -> self#s_undefined(a)
+      | SSrcloc(a,b) -> self#s_srcloc(a,b)
+      | SNum(a,b) -> self#s_num(a,b)
+      | SFrac(a,b,c) -> self#s_frac(a,b,c)
+      | SBool(a,b) -> self#s_bool(a,b)
+      | SStr(a,b) -> self#s_str(a,b)
+      | SDot(a,b,c) -> self#s_dot(a,b,c)
+      | SGetBang(a,b,c) -> self#s_get_bang(a,b,c)
+      | SBracket(a,b,c) -> self#s_bracket(a,b,c)
+      | SData(a,b,c,d,e,f,g) -> self#s_data(a,b,c,d,e,f,g)
+      | SDataExpr(a,b,c,d,e,f,g,h) -> self#s_data_expr(a,b,c,d,e,f,g,h)
+      | SFor(a,b,c,d,e) -> self#s_for(a,b,c,d,e)
+      | SCheck(a,b,c,d) -> self#s_check(a,b,c,d)
 
-    val visit_defined_value : defined_value -> defined_value_ret
+    method visit_bind = function
+      | SBind(l,b,n,a) -> self#s_bind(l,b,n,a)
 
-    val visit_defined_type : defined_type -> defined_type_ret
+    method visit_member = function
+      | SDataField(l,s,e) -> self#s_data_field(l,s,e)
+      | SMutableField(l,s,a,e) -> self#s_mutable_field(l,s,a,e)
+      | SMethodField(a,b,c,d,e,f,g,h) -> self#s_method_field(a,b,c,d,e,f,g,h)
 
-    val visit_expr : expr -> expr_ret
+    method visit_for_bind = function
+      | SForBind(l,b,e) -> self#s_for_bind(l,b,e)
 
-    val visit_bind : bind -> bind_ret
+    method visit_variant_member = function
+      | SVariantMember(l,v,b) -> self#s_variant_member(l,v,b)
 
-    val visit_member : member -> member_ret
+    method visit_variant = function
+      | SVariant(a,b,c,d,e) -> self#s_variant(a,b,c,d,e)
+      | SSingletonVariant(l,s,m) -> self#s_singleton_variant(l,s,m)
 
-    val visit_for_bind : for_bind -> for_bind_ret
+    method visit_if_branch = function
+      | SIfBranch(l,e1,e2) -> self#s_if_branch(l,e1,e2)
 
-    val visit_variant_member : variant_member -> variant_member_ret
+    method visit_if_pipe_branch = function
+      | SIfPipeBranch(l,e1,e2) -> self#s_if_pipe_branch(l,e1,e2)
 
-    val visit_variant : variant -> variant_ret
+    method visit_cases_bind = function
+      | SCasesBind(l,c,b) -> self#s_cases_bind(l,c,b)
 
-    val visit_if_branch : if_branch -> if_branch_ret
+    method visit_cases_branch = function
+      | SCasesBranch(a,b,c,d,e) -> self#s_cases_branch(a,b,c,d,e)
+      | SSingletonCasesBranch(a,b,c,d) -> self#s_singleton_cases_branch(a,b,c,d)
 
-    val visit_if_pipe_branch : if_pipe_branch -> if_pipe_branch_ret
+    method visit_ann = function
+      | ABlank  -> self#a_blank()
+      | AAny  -> self#a_any()
+      | AName (a,b) -> self#a_name(a,b)
+      | ATypeVar (a,b) -> self#a_type_var(a,b)
+      | AArrow (a,b,c,d) -> self#a_arrow(a,b,c,d)
+      | AMethod (a,b,c) -> self#a_method(a,b,c)
+      | ARecord (a,b) -> self#a_record(a,b)
+      | AApp (a,b,c) -> self#a_app(a,b,c)
+      | APred (a,b,c) -> self#a_pred(a,b,c)
+      | ADot (a,b,c) -> self#a_dot(a,b,c)
+      | AChecked (a,b) -> self#a_checked(a,b)
 
-    val visit_cases_bind : cases_bind -> cases_bind_ret
+    method visit_a_field = function
+      | AField(l,s,a) -> self#a_field(l,s,a)
 
-    val visit_cases_branch : cases_branch -> cases_branch_ret
+    method virtual s_underscore : loc -> 'name_ret
+    method virtual s_name : (loc * string) -> 'name_ret
+    method virtual s_global : string -> 'name_ret
+    method virtual s_type_global : string -> 'name_ret
+    method virtual s_atom : (string * int) -> 'name_ret
 
-    val visit_ann : ann -> ann_ret
+    method virtual s_program : (loc * provide * provide_types * import list * expr) -> 'program_ret
 
-    val visit_a_field : a_field -> a_field_ret
+    method virtual s_file_import : (loc * string) -> 'import_type_ret
+    method virtual s_const_import : (loc * string) -> 'import_type_ret
+    method virtual s_special_import : (loc * string * string list) -> 'import_type_ret
 
-end
-module type AST_VISITOR_IMPL = sig
-  type name_ret
-  type program_ret
-  type import_type_ret
-  type import_ret
-  type provide_ret
-  type provide_types_ret
-  type let_bind_ret
-  type letrec_bind_ret
-  type type_let_bind_ret
-  type defined_value_ret
-  type defined_type_ret
-  type expr_ret
-  type bind_ret
-  type member_ret
-  type for_bind_ret
-  type variant_member_ret
-  type variant_ret
-  type if_branch_ret
-  type if_pipe_branch_ret
-  type cases_bind_ret
-  type cases_branch_ret
-  type ann_ret
-  type a_field_ret
-    val s_underscore : loc -> name_ret
-    val s_name : (loc * string) -> name_ret
-    val s_global : string -> name_ret
-    val s_type_global : string -> name_ret
-    val s_atom : (string * int) -> name_ret
+    method virtual s_include : (loc * import_type) -> 'import_ret
+    method virtual s_import : (loc * import_type * name) -> 'import_ret
+    method virtual s_import_types : (loc * import_type * name * name) -> 'import_ret
+    method virtual s_import_fields : (loc * name list * import_type) -> 'import_ret
+    method virtual s_import_complete : (loc * name list * name list *
+                                        import_type * name * name) -> 'import_ret
 
-    val s_program : (loc * provide * provide_types * import list * expr) -> program_ret
+    method virtual s_provide : (loc * expr) -> 'provide_ret
+    method virtual s_provide_complete : (loc * provided_value list * provided_alias list *
+                                         provided_datatype list) -> 'provide_ret
+    method virtual s_provide_all : loc -> 'provide_ret
+    method virtual s_provide_none : loc -> 'provide_ret
 
-    val s_file_import : (loc * string) -> import_type_ret
-    val s_const_import : (loc * string) -> import_type_ret
-    val s_special_import : (loc * string * string list) -> import_type_ret
+    method virtual s_provide_types : (loc * a_field list) -> 'provide_types_ret
+    method virtual s_provide_types_all : loc -> 'provide_types_ret
+    method virtual s_provide_types_none : loc -> 'provide_types_ret
 
-    val s_include : (loc * import_type) -> import_ret
-    val s_import : (loc * import_type * name) -> import_ret
-    val s_import_types : (loc * import_type * name * name) -> import_ret
-    val s_import_fields : (loc * name list * import_type) -> import_ret
-    val s_import_complete : (loc * name list * name list *
-                                        import_type * name * name) -> import_ret
+    method virtual s_let_bind : (loc * bind * expr) -> 'let_bind_ret
+    method virtual s_var_bind : (loc * bind * expr) -> 'let_bind_ret
 
-    val s_provide : (loc * expr) -> provide_ret
-    val s_provide_complete : (loc * provided_value list * provided_alias list *
-                                         provided_datatype list) -> provide_ret
-    val s_provide_all : loc -> provide_ret
-    val s_provide_none : loc -> provide_ret
+    method virtual s_letrec_bind : (loc * bind * expr) -> 'letrec_bind_ret
 
-    val s_provide_types : (loc * a_field list) -> provide_types_ret
-    val s_provide_types_all : loc -> provide_types_ret
-    val s_provide_types_none : loc -> provide_types_ret
+    method virtual s_type_bind : (loc * name * ann) -> 'type_let_bind_ret
+    method virtual s_newtype_bind : (loc * name * name) -> 'type_let_bind_ret
 
-    val s_let_bind : (loc * bind * expr) -> let_bind_ret
-    val s_var_bind : (loc * bind * expr) -> let_bind_ret
+    method virtual s_defined_value : (string * expr) -> 'defined_value_ret
 
-    val s_letrec_bind : (loc * bind * expr) -> letrec_bind_ret
+    method virtual s_defined_type : (string * ann) -> 'defined_type_ret
 
-    val s_type_bind : (loc * name * ann) -> type_let_bind_ret
-    val s_newtype_bind : (loc * name * name) -> type_let_bind_ret
+    method virtual s_module : (loc * expr * defined_value list * defined_type list *
+                               expr * a_field list * expr) -> 'expr_ret
+    method virtual s_type_let_expr : (loc * type_let_bind list * expr) -> 'expr_ret
+    method virtual s_let_expr : (loc * let_bind list * expr) -> 'expr_ret
+    method virtual s_letrec : (loc * letrec_bind list * expr) -> 'expr_ret
+    method virtual s_hint_exp : (loc * hint list * expr) -> 'expr_ret
+    method virtual s_instantiate : (loc * expr * ann list) -> 'expr_ret
+    method virtual s_block : (loc * expr list) -> 'expr_ret
+    method virtual s_user_block : (loc * expr) -> 'expr_ret
+    method virtual s_fun : (loc * string * name list * bind list * ann *
+                            string * expr * expr option) -> 'expr_ret
+    method virtual s_type : (loc * name * ann) -> 'expr_ret
+    method virtual s_newtype : (loc * name * name) -> 'expr_ret
+    method virtual s_var : (loc * bind * expr) -> 'expr_ret
+    method virtual s_rec : (loc * bind * expr) -> 'expr_ret
+    method virtual s_let : (loc * bind * expr * bool) -> 'expr_ret
+    method virtual s_ref : (loc * ann option) -> 'expr_ret
+    method virtual s_contract : (loc * name * ann) -> 'expr_ret
+    method virtual s_when : (loc * expr * expr) -> 'expr_ret
+    method virtual s_assign : (loc * name * expr) -> 'expr_ret
+    method virtual s_if_pipe : (loc * if_pipe_branch list) -> 'expr_ret
+    method virtual s_if_pipe_else : (loc * if_pipe_branch list * expr) -> 'expr_ret
+    method virtual s_if : (loc * if_branch list) -> 'expr_ret
+    method virtual s_if_else : (loc * if_branch list * expr) -> 'expr_ret
+    method virtual s_cases : (loc * ann * expr * cases_branch list) -> 'expr_ret
+    method virtual s_cases_else : (loc * ann * expr * cases_branch list * expr) -> 'expr_ret
+    method virtual s_op : (loc * string * expr * expr) -> 'expr_ret
+    method virtual s_check_test : (loc * check_op * expr option * expr * expr option) -> 'expr_ret
+    method virtual s_check_expr : (loc * expr * ann) -> 'expr_ret
+    method virtual s_paren : (loc * expr) -> 'expr_ret
+    method virtual s_lam : (loc * name list * bind list * ann * string *
+                            expr * expr option) -> 'expr_ret
+    method virtual s_method : (loc * name list * bind list * ann * string *
+                               expr * expr option) -> 'expr_ret
+    method virtual s_extend : (loc * expr * member list) -> 'expr_ret
+    method virtual s_update : (loc * expr * member list) -> 'expr_ret
+    method virtual s_obj : (loc * member list) -> 'expr_ret
+    method virtual s_array : (loc * expr list) -> 'expr_ret
+    method virtual s_construct : (loc * construct_modifier * expr * expr list) -> 'expr_ret
+    method virtual s_app : (loc * expr * expr list) -> 'expr_ret
+    method virtual s_prim_app : (loc * string * expr list) -> 'expr_ret
+    method virtual s_prim_val : (loc * string) -> 'expr_ret
+    method virtual s_id : (loc * name) -> 'expr_ret
+    method virtual s_id_var : (loc * name) -> 'expr_ret
+    method virtual s_id_letrec : (loc * name * bool) -> 'expr_ret
+    method virtual s_undefined : loc -> 'expr_ret
+    method virtual s_srcloc : (loc * loc) -> 'expr_ret
+    method virtual s_num : (loc * BatNum.num) -> 'expr_ret
+    method virtual s_frac : (loc * int * int) -> 'expr_ret
+    method virtual s_bool : (loc * bool) -> 'expr_ret
+    method virtual s_str : (loc * string) -> 'expr_ret
+    method virtual s_dot : (loc * expr * string) -> 'expr_ret
+    method virtual s_get_bang : (loc * expr * string) -> 'expr_ret
+    method virtual s_bracket : (loc * expr * expr) -> 'expr_ret
+    method virtual s_data : (loc * string * name list * expr list * variant list * member list *
+                             expr option) -> 'expr_ret
+    method virtual s_data_expr : (loc * string * name * name list * expr list * variant list *
+                                  member list * expr option) -> 'expr_ret
+    method virtual s_for : (loc * expr * for_bind list * ann * expr) -> 'expr_ret
+    method virtual s_check : (loc * string option * expr * bool) -> 'expr_ret
 
-    val s_defined_value : (string * expr) -> defined_value_ret
+    method virtual s_bind : (loc * bool * name * ann) -> 'bind_ret
 
-    val s_defined_type : (string * ann) -> defined_type_ret
+    method virtual s_data_field : (loc * string * expr) -> 'member_ret
+    method virtual s_mutable_field : (loc * string * ann * expr) -> 'member_ret
+    method virtual s_method_field : (loc * string * name list * bind list * ann * string *
+                                     expr * expr option) -> 'member_ret
 
-    val s_module : (loc * expr * defined_value list * defined_type list *
-                               expr * a_field list * expr) -> expr_ret
-    val s_type_let_expr : (loc * type_let_bind list * expr) -> expr_ret
-    val s_let_expr : (loc * let_bind list * expr) -> expr_ret
-    val s_letrec : (loc * letrec_bind list * expr) -> expr_ret
-    val s_hint_exp : (loc * hint list * expr) -> expr_ret
-    val s_instantiate : (loc * expr * ann list) -> expr_ret
-    val s_block : (loc * expr list) -> expr_ret
-    val s_user_block : (loc * expr) -> expr_ret
-    val s_fun : (loc * string * name list * bind list * ann *
-                            string * expr * expr option) -> expr_ret
-    val s_type : (loc * name * ann) -> expr_ret
-    val s_newtype : (loc * name * name) -> expr_ret
-    val s_var : (loc * bind * expr) -> expr_ret
-    val s_rec : (loc * bind * expr) -> expr_ret
-    val s_let : (loc * bind * expr * bool) -> expr_ret
-    val s_ref : (loc * ann option) -> expr_ret
-    val s_contract : (loc * name * ann) -> expr_ret
-    val s_when : (loc * expr * expr) -> expr_ret
-    val s_assign : (loc * name * expr) -> expr_ret
-    val s_if_pipe : (loc * if_pipe_branch list) -> expr_ret
-    val s_if_pipe_else : (loc * if_pipe_branch list * expr) -> expr_ret
-    val s_if : (loc * if_branch list) -> expr_ret
-    val s_if_else : (loc * if_branch list * expr) -> expr_ret
-    val s_cases : (loc * ann * expr * cases_branch list) -> expr_ret
-    val s_cases_else : (loc * ann * expr * cases_branch list * expr) -> expr_ret
-    val s_op : (loc * string * expr * expr) -> expr_ret
-    val s_check_test : (loc * check_op * expr option * expr * expr option) -> expr_ret
-    val s_check_expr : (loc * expr * ann) -> expr_ret
-    val s_paren : (loc * expr) -> expr_ret
-    val s_lam : (loc * name list * bind list * ann * string *
-                            expr * expr option) -> expr_ret
-    val s_method : (loc * name list * bind list * ann * string *
-                               expr * expr option) -> expr_ret
-    val s_extend : (loc * expr * member list) -> expr_ret
-    val s_update : (loc * expr * member list) -> expr_ret
-    val s_obj : (loc * member list) -> expr_ret
-    val s_array : (loc * expr list) -> expr_ret
-    val s_construct : (loc * construct_modifier * expr * expr list) -> expr_ret
-    val s_app : (loc * expr * expr list) -> expr_ret
-    val s_prim_app : (loc * string * expr list) -> expr_ret
-    val s_prim_val : (loc * string) -> expr_ret
-    val s_id : (loc * name) -> expr_ret
-    val s_id_var : (loc * name) -> expr_ret
-    val s_id_letrec : (loc * name * bool) -> expr_ret
-    val s_undefined : loc -> expr_ret
-    val s_srcloc : (loc * loc) -> expr_ret
-    val s_num : (loc * BatNum.num) -> expr_ret
-    val s_frac : (loc * int * int) -> expr_ret
-    val s_bool : (loc * bool) -> expr_ret
-    val s_str : (loc * string) -> expr_ret
-    val s_dot : (loc * expr * string) -> expr_ret
-    val s_get_bang : (loc * expr * string) -> expr_ret
-    val s_bracket : (loc * expr * expr) -> expr_ret
-    val s_data : (loc * string * name list * expr list * variant list * member list *
-                             expr option) -> expr_ret
-    val s_data_expr : (loc * string * name * name list * expr list * variant list *
-                                  member list * expr option) -> expr_ret
-    val s_for : (loc * expr * for_bind list * ann * expr) -> expr_ret
-    val s_check : (loc * string option * expr * bool) -> expr_ret
+    method virtual s_for_bind : (loc * bind * expr) -> 'for_bind_ret
 
-    val s_bind : (loc * bool * name * ann) -> bind_ret
+    method virtual s_variant_member : (loc * variant_member_type * bind) -> 'variant_member_ret
 
-    val s_data_field : (loc * string * expr) -> member_ret
-    val s_mutable_field : (loc * string * ann * expr) -> member_ret
-    val s_method_field : (loc * string * name list * bind list * ann * string *
-                                     expr * expr option) -> member_ret
+    method virtual s_variant : (loc * loc * string * variant_member list * member list) -> 'variant_ret
+    method virtual s_singleton_variant : (loc * string * member list) -> 'variant_ret
 
-    val s_for_bind : (loc * bind * expr) -> for_bind_ret
+    method virtual s_if_branch : (loc * expr * expr) -> 'if_branch_ret
 
-    val s_variant_member : (loc * variant_member_type * bind) -> variant_member_ret
+    method virtual s_if_pipe_branch : (loc * expr * expr) -> 'if_pipe_branch_ret
 
-    val s_variant : (loc * loc * string * variant_member list * member list) -> variant_ret
-    val s_singleton_variant : (loc * string * member list) -> variant_ret
+    method virtual s_cases_bind : (loc * cases_bind_type * bind) -> 'cases_bind_ret
 
-    val s_if_branch : (loc * expr * expr) -> if_branch_ret
+    method virtual s_cases_branch : (loc * loc * string * cases_bind list * expr) -> 'cases_branch_ret
+    method virtual s_singleton_cases_branch : (loc * loc * string * expr) -> 'cases_branch_ret
 
-    val s_if_pipe_branch : (loc * expr * expr) -> if_pipe_branch_ret
+    method virtual a_blank : unit -> 'ann_ret
+    method virtual a_any : unit -> 'ann_ret
+    method virtual a_name : (loc * name) -> 'ann_ret
+    method virtual a_type_var : (loc * name) -> 'ann_ret
+    method virtual a_arrow : (loc * ann list * ann * bool) -> 'ann_ret
+    method virtual a_method : (loc * ann list * ann) -> 'ann_ret
+    method virtual a_record : (loc * a_field list) -> 'ann_ret
+    method virtual a_app : (loc * ann * ann list) -> 'ann_ret
+    method virtual a_pred : (loc * ann * expr) -> 'ann_ret
+    method virtual a_dot : (loc * name * string) -> 'ann_ret
+    method virtual a_checked : (ann * ann) -> 'ann_ret
 
-    val s_cases_bind : (loc * cases_bind_type * bind) -> cases_bind_ret
-
-    val s_cases_branch : (loc * loc * string * cases_bind list * expr) -> cases_branch_ret
-    val s_singleton_cases_branch : (loc * loc * string * expr) -> cases_branch_ret
-
-    val a_blank : unit -> ann_ret
-    val a_any : unit -> ann_ret
-    val a_name : (loc * name) -> ann_ret
-    val a_type_var : (loc * name) -> ann_ret
-    val a_arrow : (loc * ann list * ann * bool) -> ann_ret
-    val a_method : (loc * ann list * ann) -> ann_ret
-    val a_record : (loc * a_field list) -> ann_ret
-    val a_app : (loc * ann * ann list) -> ann_ret
-    val a_pred : (loc * ann * expr) -> ann_ret
-    val a_dot : (loc * name * string) -> ann_ret
-    val a_checked : (ann * ann) -> ann_ret
-
-    val a_field : (loc * string * ann) -> a_field_ret
-end
-
-module type AST_VISITOR = sig
-  include AST_DISPATCH
-  include AST_VISITOR_IMPL with type name_ret := name_ret
-                            and type program_ret := program_ret
-                            and type import_type_ret := import_type_ret
-                            and type import_ret := import_ret
-                            and type provide_ret := provide_ret
-                            and type provide_types_ret := provide_types_ret
-                            and type let_bind_ret := let_bind_ret
-                            and type letrec_bind_ret := letrec_bind_ret
-                            and type type_let_bind_ret := type_let_bind_ret
-                            and type defined_value_ret := defined_value_ret
-                            and type defined_type_ret := defined_type_ret
-                            and type expr_ret := expr_ret
-                            and type bind_ret := bind_ret
-                            and type member_ret := member_ret
-                            and type for_bind_ret := for_bind_ret
-                            and type variant_member_ret := variant_member_ret
-                            and type variant_ret := variant_ret
-                            and type if_branch_ret := if_branch_ret
-                            and type if_pipe_branch_ret := if_pipe_branch_ret
-                            and type cases_bind_ret := cases_bind_ret
-                            and type cases_branch_ret := cases_branch_ret
-                            and type ann_ret := ann_ret
-                            and type a_field_ret := a_field_ret
+    method virtual a_field : (loc * string * ann) -> 'a_field_ret
 end
 
-module AstDispatchF(IM : AST_VISITOR_IMPL) : (AST_DISPATCH with type name_ret := IM.name_ret
-                            and type program_ret := IM.program_ret
-                            and type import_type_ret := IM.import_type_ret
-                            and type import_ret := IM.import_ret
-                            and type provide_ret := IM.provide_ret
-                            and type provide_types_ret := IM.provide_types_ret
-                            and type let_bind_ret := IM.let_bind_ret
-                            and type letrec_bind_ret := IM.letrec_bind_ret
-                            and type type_let_bind_ret := IM.type_let_bind_ret
-                            and type defined_value_ret := IM.defined_value_ret
-                            and type defined_type_ret := IM.defined_type_ret
-                            and type expr_ret := IM.expr_ret
-                            and type bind_ret := IM.bind_ret
-                            and type member_ret := IM.member_ret
-                            and type for_bind_ret := IM.for_bind_ret
-                            and type variant_member_ret := IM.variant_member_ret
-                            and type variant_ret := IM.variant_ret
-                            and type if_branch_ret := IM.if_branch_ret
-                            and type if_pipe_branch_ret := IM.if_pipe_branch_ret
-                            and type cases_bind_ret := IM.cases_bind_ret
-                            and type cases_branch_ret := IM.cases_branch_ret
-                            and type ann_ret := IM.ann_ret
-                            and type a_field_ret := IM.a_field_ret)  = struct
-
-    let visit_name = function
-      | SUnderscore(l) -> IM.s_underscore l
-      | SName(l,s) -> IM.s_name (l,s)
-      | SGlobal(s) -> IM.s_global s
-      | STypeGlobal(s) -> IM.s_type_global s
-      | SAtom(s,i) -> IM.s_atom (s,i)
-
-    let visit_program = function
-      | SProgram(l,p,pt,il,e) -> IM.s_program (l,p,pt,il,e)
-
-    let visit_import_type = function
-      | SFileImport(l,s) -> IM.s_file_import(l,s)
-      | SConstImport(l,s) -> IM.s_const_import(l,s)
-      | SSpecialImport(l,s,sl) -> IM.s_special_import(l,s,sl)
-
-    let visit_import = function
-      | SInclude(a,b) -> IM.s_include(a,b)
-      | SImport(a,b,c) -> IM.s_import(a,b,c)
-      | SImportTypes(a,b,c,d) -> IM.s_import_types(a,b,c,d)
-      | SImportFields(a,b,c) -> IM.s_import_fields(a,b,c)
-      | SImportComplete(a,b,c,d,e,f) -> IM.s_import_complete(a,b,c,d,e,f)
-
-    let visit_provide = function
-      | SProvide(a,b) -> IM.s_provide(a,b)
-      | SProvideComplete(a,b,c,d) -> IM.s_provide_complete(a,b,c,d)
-      | SProvideAll(a) -> IM.s_provide_all(a)
-      | SProvideNone(a) -> IM.s_provide_none(a)
-
-    let visit_provide_types = function
-      | SProvideTypes(a,b) -> IM.s_provide_types(a,b)
-      | SProvideTypesAll(a) -> IM.s_provide_types_all(a)
-      | SProvideTypesNone(a) -> IM.s_provide_types_none(a)
-
-    let visit_let_bind = function
-      | SLetBind (a,b,c) -> IM.s_let_bind(a,b,c)
-      | SVarBind (a,b,c) -> IM.s_var_bind(a,b,c)
-
-    let visit_letrec_bind = function
-      | SLetrecBind(l,b,e) -> IM.s_letrec_bind(l,b,e)
-
-    let visit_type_let_bind = function
-      | STypeBind(l,n,a) -> IM.s_type_bind(l,n,a)
-      | SNewtypeBind(l,n1,n2) -> IM.s_newtype_bind(l,n1,n2)
-
-    let visit_defined_value = function
-      | SDefinedValue(s,e) -> IM.s_defined_value(s,e)
-
-    let visit_defined_type = function
-      | SDefinedType(s,a) -> IM.s_defined_type(s,a)
-
-    let visit_expr = function
-      | SModule(a,b,c,d,e,f,g) -> IM.s_module(a,b,c,d,e,f,g)
-      | STypeLetExpr(a,b,c) -> IM.s_type_let_expr(a,b,c)
-      | SLetExpr(a,b,c) -> IM.s_let_expr(a,b,c)
-      | SLetrec(a,b,c) -> IM.s_letrec(a,b,c)
-      | SHintExp(a,b,c) -> IM.s_hint_exp(a,b,c)
-      | SInstantiate(a,b,c) -> IM.s_instantiate(a,b,c)
-      | SBlock(a,b) -> IM.s_block(a,b)
-      | SUserBlock(a,b) -> IM.s_user_block(a,b)
-      | SFun(a,b,c,d,e,f,g,h) -> IM.s_fun(a,b,c,d,e,f,g,h)
-      | SType(a,b,c) -> IM.s_type(a,b,c)
-      | SNewtype(a,b,c) -> IM.s_newtype(a,b,c)
-      | SVar(a,b,c) -> IM.s_var(a,b,c)
-      | SRec(a,b,c) -> IM.s_rec(a,b,c)
-      | SLet(a,b,c,d) -> IM.s_let(a,b,c,d)
-      | SRef(a,b) -> IM.s_ref(a,b)
-      | SContract(a,b,c) -> IM.s_contract(a,b,c)
-      | SWhen(a,b,c) -> IM.s_when(a,b,c)
-      | SAssign(a,b,c) -> IM.s_assign(a,b,c)
-      | SIfPipe(a,b) -> IM.s_if_pipe(a,b)
-      | SIfPipeElse(a,b,c) -> IM.s_if_pipe_else(a,b,c)
-      | SIf(a,b) -> IM.s_if(a,b)
-      | SIfElse(a,b,c) -> IM.s_if_else(a,b,c)
-      | SCases(a,b,c,d) -> IM.s_cases(a,b,c,d)
-      | SCasesElse(a,b,c,d,e) -> IM.s_cases_else(a,b,c,d,e)
-      | SOp(a,b,c,d) -> IM.s_op(a,b,c,d)
-      | SCheckTest(a,b,c,d,e) -> IM.s_check_test(a,b,c,d,e)
-      | SCheckExpr(a,b,c) -> IM.s_check_expr(a,b,c)
-      | SParen(a,b) -> IM.s_paren(a,b)
-      | SLam(a,b,c,d,e,f,g) -> IM.s_lam(a,b,c,d,e,f,g)
-      | SMethod(a,b,c,d,e,f,g) -> IM.s_method(a,b,c,d,e,f,g)
-      | SExtend(a,b,c) -> IM.s_extend(a,b,c)
-      | SUpdate(a,b,c) -> IM.s_update(a,b,c)
-      | SObj(a,b) -> IM.s_obj(a,b)
-      | SArray(a,b) -> IM.s_array(a,b)
-      | SConstruct(a,b,c,d) -> IM.s_construct(a,b,c,d)
-      | SApp(a,b,c) -> IM.s_app(a,b,c)
-      | SPrimApp(a,b,c) -> IM.s_prim_app(a,b,c)
-      | SPrimVal(a,b) -> IM.s_prim_val(a,b)
-      | SId(a,b) -> IM.s_id(a,b)
-      | SIdVar(a,b) -> IM.s_id_var(a,b)
-      | SIdLetrec(a,b,c) -> IM.s_id_letrec(a,b,c)
-      | SUndefined(a) -> IM.s_undefined(a)
-      | SSrcloc(a,b) -> IM.s_srcloc(a,b)
-      | SNum(a,b) -> IM.s_num(a,b)
-      | SFrac(a,b,c) -> IM.s_frac(a,b,c)
-      | SBool(a,b) -> IM.s_bool(a,b)
-      | SStr(a,b) -> IM.s_str(a,b)
-      | SDot(a,b,c) -> IM.s_dot(a,b,c)
-      | SGetBang(a,b,c) -> IM.s_get_bang(a,b,c)
-      | SBracket(a,b,c) -> IM.s_bracket(a,b,c)
-      | SData(a,b,c,d,e,f,g) -> IM.s_data(a,b,c,d,e,f,g)
-      | SDataExpr(a,b,c,d,e,f,g,h) -> IM.s_data_expr(a,b,c,d,e,f,g,h)
-      | SFor(a,b,c,d,e) -> IM.s_for(a,b,c,d,e)
-      | SCheck(a,b,c,d) -> IM.s_check(a,b,c,d)
-
-    let visit_bind = function
-      | SBind(l,b,n,a) -> IM.s_bind(l,b,n,a)
-
-    let visit_member = function
-      | SDataField(l,s,e) -> IM.s_data_field(l,s,e)
-      | SMutableField(l,s,a,e) -> IM.s_mutable_field(l,s,a,e)
-      | SMethodField(a,b,c,d,e,f,g,h) -> IM.s_method_field(a,b,c,d,e,f,g,h)
-
-    let visit_for_bind = function
-      | SForBind(l,b,e) -> IM.s_for_bind(l,b,e)
-
-    let visit_variant_member = function
-      | SVariantMember(l,v,b) -> IM.s_variant_member(l,v,b)
-
-    let visit_variant = function
-      | SVariant(a,b,c,d,e) -> IM.s_variant(a,b,c,d,e)
-      | SSingletonVariant(l,s,m) -> IM.s_singleton_variant(l,s,m)
-
-    let visit_if_branch = function
-      | SIfBranch(l,e1,e2) -> IM.s_if_branch(l,e1,e2)
-
-    let visit_if_pipe_branch = function
-      | SIfPipeBranch(l,e1,e2) -> IM.s_if_pipe_branch(l,e1,e2)
-
-    let visit_cases_bind = function
-      | SCasesBind(l,c,b) -> IM.s_cases_bind(l,c,b)
-
-    let visit_cases_branch = function
-      | SCasesBranch(a,b,c,d,e) -> IM.s_cases_branch(a,b,c,d,e)
-      | SSingletonCasesBranch(a,b,c,d) -> IM.s_singleton_cases_branch(a,b,c,d)
-
-    let visit_ann = function
-      | ABlank  -> IM.a_blank()
-      | AAny  -> IM.a_any()
-      | AName (a,b) -> IM.a_name(a,b)
-      | ATypeVar (a,b) -> IM.a_type_var(a,b)
-      | AArrow (a,b,c,d) -> IM.a_arrow(a,b,c,d)
-      | AMethod (a,b,c) -> IM.a_method(a,b,c)
-      | ARecord (a,b) -> IM.a_record(a,b)
-      | AApp (a,b,c) -> IM.a_app(a,b,c)
-      | APred (a,b,c) -> IM.a_pred(a,b,c)
-      | ADot (a,b,c) -> IM.a_dot(a,b,c)
-      | AChecked (a,b) -> IM.a_checked(a,b)
-
-    let visit_a_field = function
-      | AField(l,s,a) -> IM.a_field(l,s,a)
-end
-
-module type AST_FOLD_VISITOR =
-sig
-  type t
-  include AST_VISITOR with type name_ret = t
-                       and type program_ret = t
-                       and type import_type_ret = t
-                       and type import_ret = t
-                       and type provide_ret = t
-                       and type provide_types_ret = t
-                       and type let_bind_ret = t
-                       and type letrec_bind_ret = t
-                       and type type_let_bind_ret = t
-                       and type defined_value_ret = t
-                       and type defined_type_ret = t
-                       and type expr_ret = t
-                       and type bind_ret = t
-                       and type member_ret = t
-                       and type for_bind_ret = t
-                       and type variant_member_ret = t
-                       and type variant_ret = t
-                       and type if_branch_ret = t
-                       and type if_pipe_branch_ret = t
-                       and type cases_bind_ret = t
-                       and type cases_branch_ret = t
-                       and type ann_ret = t
-                       and type a_field_ret = t
-end
-
-module type AST_MAP_VISITOR = AST_VISITOR with type name_ret = name
-                                           and type program_ret = program
-                                           and type import_type_ret = import_type
-                                           and type import_ret = import
-                                           and type provide_ret = provide
-                                           and type provide_types_ret = provide_types
-                                           and type let_bind_ret = let_bind
-                                           and type letrec_bind_ret = letrec_bind
-                                           and type type_let_bind_ret = type_let_bind
-                                           and type defined_value_ret = defined_value
-                                           and type defined_type_ret = defined_type
-                                           and type expr_ret = expr
-                                           and type bind_ret = bind
-                                           and type member_ret = member
-                                           and type for_bind_ret = for_bind
-                                           and type variant_member_ret = variant_member
-                                           and type variant_ret = variant
-                                           and type if_branch_ret = if_branch
-                                           and type if_pipe_branch_ret = if_pipe_branch
-                                           and type cases_bind_ret = cases_bind
-                                           and type cases_branch_ret = cases_branch
-                                           and type ann_ret = ann
-                                           and type a_field_ret = a_field
-
-module rec DefaultMapVisitor : AST_MAP_VISITOR = struct
-  type name_ret = name
-  type program_ret = program
-  type import_type_ret = import_type
-  type import_ret = import
-  type provide_ret = provide
-  type provide_types_ret = provide_types
-  type let_bind_ret = let_bind
-  type letrec_bind_ret = letrec_bind
-  type type_let_bind_ret = type_let_bind
-  type defined_value_ret = defined_value
-  type defined_type_ret = defined_type
-  type expr_ret = expr
-  type bind_ret = bind
-  type member_ret = member
-  type for_bind_ret = for_bind
-  type variant_member_ret = variant_member
-  type variant_ret = variant
-  type if_branch_ret = if_branch
-  type if_pipe_branch_ret = if_pipe_branch
-  type cases_bind_ret = cases_bind
-  type cases_branch_ret = cases_branch
-  type ann_ret = ann
-  type a_field_ret = a_field
-
-  module D = AstDispatchF(DefaultMapVisitor)
-  let visit_name = D.visit_name
-  let visit_program = D.visit_program
-  let visit_import_type = D.visit_import_type
-  let visit_import = D.visit_import
-  let visit_provide = D.visit_provide
-  let visit_provide_types = D.visit_provide_types
-  let visit_let_bind = D.visit_let_bind
-  let visit_letrec_bind = D.visit_letrec_bind
-  let visit_type_let_bind = D.visit_type_let_bind
-  let visit_defined_value = D.visit_defined_value
-  let visit_defined_type = D.visit_defined_type
-  let visit_expr = D.visit_expr
-  let visit_bind = D.visit_bind
-  let visit_member = D.visit_member
-  let visit_for_bind = D.visit_for_bind
-  let visit_variant_member = D.visit_variant_member
-  let visit_variant = D.visit_variant
-  let visit_if_branch = D.visit_if_branch
-  let visit_if_pipe_branch = D.visit_if_pipe_branch
-  let visit_cases_bind = D.visit_cases_bind
-  let visit_cases_branch = D.visit_cases_branch
-  let visit_ann = D.visit_ann
-  let visit_a_field = D.visit_a_field
-
-  let visit_expr_option = function
+class default_map_visitor = object(self)
+  inherit [name,
+           program,
+           import_type,
+           import,
+           provide,
+           provide_types,
+           let_bind,
+           letrec_bind,
+           type_let_bind,
+           defined_value,
+           defined_type,
+           expr,
+           bind,
+           member,
+           for_bind,
+           variant_member,
+           variant,
+           if_branch,
+           if_pipe_branch,
+           cases_bind,
+           cases_branch,
+           ann,
+           a_field] ast_visitor_base
+  method private visit_expr_option = function
     | None -> None
-    | Some(v) -> Some(D.visit_expr v)
+    | Some(v) -> Some(self#visit_expr v)
 
-  let visit_ann_option = function
+  method private visit_ann_option = function
     | None -> None
-    | Some(v) -> Some(D.visit_ann v)
+    | Some(v) -> Some(self#visit_ann v)
 
-  let s_check_expr _ = failwith "SCheckExpr visitor unimplemented"
-  let a_checked _ = failwith "AChecked visitor unimplemented"
+  method s_check_expr _ = failwith "SCheckExpr visitor unimplemented"
+  method a_checked _ = failwith "AChecked visitor unimplemented"
 
-  let s_underscore l = SUnderscore(l)
-  let s_name(l,s) = SName(l,s)
-  let s_type_global s = STypeGlobal(s)
-  let s_global s = SGlobal(s)
-  let s_atom(b,s) = SAtom(b,s)
+  method s_underscore l = SUnderscore(l)
+  method s_name(l,s) = SName(l,s)
+  method s_type_global s = STypeGlobal(s)
+  method s_global s = SGlobal(s)
+  method s_atom(b,s) = SAtom(b,s)
 
-  let s_defined_value(n,v) = SDefinedValue(n,D.visit_expr v)
-  let s_defined_type(n,t) = SDefinedType(n,D.visit_ann t)
+  method s_defined_value(n,v) = SDefinedValue(n,self#visit_expr v)
+  method s_defined_type(n,t) = SDefinedType(n,self#visit_ann t)
 
-  let s_module(l,a,dv,dt,p,t,c) =
-    SModule(l,D.visit_expr a, List.map D.visit_defined_value dv,
-            List.map D.visit_defined_type dt,
-            D.visit_expr p, List.map D.visit_a_field t, D.visit_expr c)
+  method s_module(l,a,dv,dt,p,t,c) =
+    SModule(l,self#visit_expr a, List.map self#visit_defined_value dv,
+            List.map self#visit_defined_type dt,
+            self#visit_expr p, List.map self#visit_a_field t, self#visit_expr c)
 
-  let s_program(l,p,pt,i,b) = SProgram(l,D.visit_provide p, D.visit_provide_types pt,
-                                          List.map D.visit_import i, D.visit_expr b)
+  method s_program(l,p,pt,i,b) = SProgram(l,self#visit_provide p, self#visit_provide_types pt,
+                                          List.map self#visit_import i, self#visit_expr b)
 
-  let s_include(l,it) = SInclude(l,D.visit_import_type it)
-  let s_import(l,it,n) = SImport(l,D.visit_import_type it,D.visit_name n)
-  let s_import_complete(l,v,t,m,vn,tn) =
-    SImportComplete(l,List.map D.visit_name v,
-                    List.map D.visit_name v,
-                    D.visit_import_type m, D.visit_name vn, D.visit_name tn)
+  method s_include(l,it) = SInclude(l,self#visit_import_type it)
+  method s_import(l,it,n) = SImport(l,self#visit_import_type it,self#visit_name n)
+  method s_import_complete(l,v,t,m,vn,tn) =
+    SImportComplete(l,List.map self#visit_name v,
+                    List.map self#visit_name v,
+                    self#visit_import_type m, self#visit_name vn, self#visit_name tn)
 
-  let s_file_import(l,f) = SFileImport(l,f)
-  let s_const_import(l,m) = SConstImport(l,m)
-  let s_special_import(l,k,a) = SSpecialImport(l,k,a)
-  let s_import_types(l,it,n,t) = SImportTypes(l,it,D.visit_name n, D.visit_name t)
-  let s_import_fields(l,f,it) = SImportFields(l,List.map D.visit_name f, it)
+  method s_file_import(l,f) = SFileImport(l,f)
+  method s_const_import(l,m) = SConstImport(l,m)
+  method s_special_import(l,k,a) = SSpecialImport(l,k,a)
+  method s_import_types(l,it,n,t) = SImportTypes(l,it,self#visit_name n, self#visit_name t)
+  method s_import_fields(l,f,it) = SImportFields(l,List.map self#visit_name f, it)
 
-  let s_provide_complete(l,v,t,d) = SProvideComplete(l,v,t,d)
-  let s_provide(l,e) = SProvide(l,D.visit_expr e)
-  let s_provide_all(l) = SProvideAll(l)
-  let s_provide_none(l) = SProvideNone(l)
+  method s_provide_complete(l,v,t,d) = SProvideComplete(l,v,t,d)
+  method s_provide(l,e) = SProvide(l,self#visit_expr e)
+  method s_provide_all(l) = SProvideAll(l)
+  method s_provide_none(l) = SProvideNone(l)
 
-  let s_provide_types(l,anns) = SProvideTypes(l,List.map D.visit_a_field anns)
-  let s_provide_types_all(l) = SProvideTypesAll(l)
-  let s_provide_types_none(l) = SProvideTypesNone(l)
+  method s_provide_types(l,anns) = SProvideTypes(l,List.map self#visit_a_field anns)
+  method s_provide_types_all(l) = SProvideTypesAll(l)
+  method s_provide_types_none(l) = SProvideTypesNone(l)
 
-  let s_bind(l,s,n,a) = SBind(l,s,D.visit_name n, D.visit_ann a)
+  method s_bind(l,s,n,a) = SBind(l,s,self#visit_name n, self#visit_ann a)
 
-  let s_var_bind(l,b,e) = SVarBind(l,D.visit_bind b, D.visit_expr e)
-  let s_let_bind(l,b,e) = SLetBind(l,D.visit_bind b, D.visit_expr e)
+  method s_var_bind(l,b,e) = SVarBind(l,self#visit_bind b, self#visit_expr e)
+  method s_let_bind(l,b,e) = SLetBind(l,self#visit_bind b, self#visit_expr e)
 
-  let s_newtype_bind(l,n,nt) = SNewtypeBind(l,D.visit_name n, D.visit_name nt)
-  let s_type_bind(l,n,a) = STypeBind(l,D.visit_name n, D.visit_ann a)
+  method s_newtype_bind(l,n,nt) = SNewtypeBind(l,self#visit_name n, self#visit_name nt)
+  method s_type_bind(l,n,a) = STypeBind(l,self#visit_name n, self#visit_ann a)
 
-  let s_type_let_expr(l,bnd,b) = STypeLetExpr(l,List.map D.visit_type_let_bind bnd,
-                                                 D.visit_expr b)
+  method s_type_let_expr(l,bnd,b) = STypeLetExpr(l,List.map self#visit_type_let_bind bnd,
+                                                 self#visit_expr b)
 
-  let s_let_expr(l,bnd,b) = SLetExpr(l,List.map D.visit_let_bind bnd, D.visit_expr b)
+  method s_let_expr(l,bnd,b) = SLetExpr(l,List.map self#visit_let_bind bnd, self#visit_expr b)
 
-  let s_letrec_bind(l,b,e) = SLetrecBind(l,D.visit_bind b, D.visit_expr e)
+  method s_letrec_bind(l,b,e) = SLetrecBind(l,self#visit_bind b, self#visit_expr e)
 
-  let s_letrec(l,bnd,b) = SLetrec(l,List.map D.visit_letrec_bind bnd, D.visit_expr b)
-  let s_hint_exp(l,h,e) = SHintExp(l, h, D.visit_expr e)
-  let s_instantiate(l,e,p) = SInstantiate(l,D.visit_expr e, List.map D.visit_ann p)
-  let s_block(l,s) = SBlock(l,List.map D.visit_expr s)
-  let s_user_block(l,b) = SUserBlock(l,D.visit_expr b)
-  let s_fun(l,n,p,ar,an,d,b,c) =
-    SFun(l,n,p,List.map D.visit_bind ar,D.visit_ann an, d,D.visit_expr b,
-         visit_expr_option c)
-  let s_type(l,n,a) = SType(l,D.visit_name n, D.visit_ann a)
-  let s_newtype(l,n,nt) = SNewtype(l,D.visit_name n, D.visit_name nt)
-  let s_var(l,n,v) = SVar(l,D.visit_bind n,D.visit_expr v)
-  let s_rec(l,n,v) = SRec(l,D.visit_bind n,D.visit_expr v)
-  let s_let(l,n,v,kv) = SLet(l,D.visit_bind n, D.visit_expr v, kv)
-  let s_ref(l,a) = SRef(l,visit_ann_option a)
-  let s_when(l,t,b) = SWhen(l,D.visit_expr t, D.visit_expr b)
-  let s_contract(l,n,a) = SContract(l,D.visit_name n, D.visit_ann a)
-  let s_assign(l,i,v) = SAssign(l,D.visit_name i, D.visit_expr v)
-  let s_if_branch(l,t,b) = SIfBranch(l,D.visit_expr t, D.visit_expr b)
-  let s_if_pipe_branch(l,t,b) = SIfPipeBranch(l,D.visit_expr t, D.visit_expr b)
-  let s_if(l,b) = SIf(l,List.map D.visit_if_branch b)
-  let s_if_else(l,b,e) = SIfElse(l,List.map D.visit_if_branch b, D.visit_expr e)
-  let s_if_pipe(l,b) = SIfPipe(l,List.map D.visit_if_pipe_branch b)
-  let s_if_pipe_else(l,b,e) = SIfPipeElse(l,List.map D.visit_if_pipe_branch b, D.visit_expr e)
-  let s_cases_bind(l,t,b) = SCasesBind(l,t,D.visit_bind b)
-  let s_cases_branch(l,pl,n,a,b) =
-    SCasesBranch(l,pl,n,List.map D.visit_cases_bind a, D.visit_expr b)
-  let s_singleton_cases_branch(l,pl,n,b) =
-    SSingletonCasesBranch(l,pl,n,D.visit_expr b)
-  let s_cases(l,t,v,b) =
-    SCases(l,D.visit_ann t, D.visit_expr v, List.map D.visit_cases_branch b)
-  let s_cases_else(l,t,v,b,e) =
-    SCasesElse(l,D.visit_ann t, D.visit_expr v,
-               List.map D.visit_cases_branch b, D.visit_expr e)
-  let s_op(l,o,left,right) = SOp(l,o,D.visit_expr left, D.visit_expr right)
-  let s_check_test(l,o,r,lft,rt) =
-    SCheckTest(l,o,visit_expr_option r, D.visit_expr lft, visit_expr_option rt)
-  let s_paren(l,e) = SParen(l,D.visit_expr e)
-  let s_lam(l,p,ar,an,d,b,c) =
-    SLam(l,List.map D.visit_name p, List.map D.visit_bind ar,
-         D.visit_ann an, d, D.visit_expr b, visit_expr_option c)
-  let s_method(l,p,ar,an,d,b,c) =
-    SMethod(l,List.map D.visit_name p, List.map D.visit_bind ar,
-            D.visit_ann an, d, D.visit_expr b, visit_expr_option c)
-  let s_extend(l,s,f) = SExtend(l,D.visit_expr s, List.map D.visit_member f)
-  let s_update(l,s,f) = SUpdate(l,D.visit_expr s, List.map D.visit_member f)
-  let s_obj(l,f) = SObj(l, List.map D.visit_member f)
-  let s_array(l,v) = SArray(l, List.map D.visit_expr v)
-  let s_construct(l,m,c,v) = SConstruct(l,m,D.visit_expr c, List.map D.visit_expr v)
-  let s_app(l,f,a) = SApp(l,D.visit_expr f, List.map D.visit_expr a)
-  let s_prim_app(l,f,a) = SPrimApp(l,f,List.map D.visit_expr a)
-  let s_prim_val(l,n) = SPrimVal(l,n)
-  let s_id(l,i) = SId(l,D.visit_name i)
-  let s_id_var(l,i) = SIdVar(l,D.visit_name i)
-  let s_id_letrec(l,i,s) = SIdLetrec(l,D.visit_name i, s)
-  let s_undefined(l) = SUndefined(l)
-  let s_srcloc(l1,l2) = SSrcloc(l1,l2)
-  let s_num(l,n) = SNum(l,n)
-  let s_frac(l,n,d) = SFrac(l,n,d)
-  let s_bool(l,b) = SBool(l,b)
-  let s_str(l,s) = SStr(l,s)
-  let s_dot(l,o,f) = SDot(l,D.visit_expr o, f)
-  let s_get_bang(l,o,f) = SGetBang(l, D.visit_expr o, f)
-  let s_bracket(l,o,f) = SBracket(l, D.visit_expr o, D.visit_expr f)
-  let s_data(l,n,p,m,v,s,c) =
-    SData(l,n,List.map D.visit_name p,
-          List.map D.visit_expr m,
-          List.map D.visit_variant v,
-          List.map D.visit_member s,
-          visit_expr_option c)
-  let s_data_expr(l,n,nt,p,m,v,s,c) =
-    SDataExpr(l,n,D.visit_name nt,List.map D.visit_name p,
-              List.map D.visit_expr m,
-              List.map D.visit_variant v,
-              List.map D.visit_member s,
-              visit_expr_option c)
-  let s_for(l,i,bnd,a,b) = SFor(l,D.visit_expr i,
-                                   List.map D.visit_for_bind bnd,
-                                   D.visit_ann a, D.visit_expr b)
-  let s_check(l,n,b,k) = SCheck(l,n,D.visit_expr b, k)
+  method s_letrec(l,bnd,b) = SLetrec(l,List.map self#visit_letrec_bind bnd, self#visit_expr b)
+  method s_hint_exp(l,h,e) = SHintExp(l, h, self#visit_expr e)
+  method s_instantiate(l,e,p) = SInstantiate(l,self#visit_expr e, List.map self#visit_ann p)
+  method s_block(l,s) = SBlock(l,List.map self#visit_expr s)
+  method s_user_block(l,b) = SUserBlock(l,self#visit_expr b)
+  method s_fun(l,n,p,ar,an,d,b,c) =
+    SFun(l,n,p,List.map self#visit_bind ar,self#visit_ann an, d,self#visit_expr b,
+         self#visit_expr_option c)
+  method s_type(l,n,a) = SType(l,self#visit_name n, self#visit_ann a)
+  method s_newtype(l,n,nt) = SNewtype(l,self#visit_name n, self#visit_name nt)
+  method s_var(l,n,v) = SVar(l,self#visit_bind n,self#visit_expr v)
+  method s_rec(l,n,v) = SRec(l,self#visit_bind n,self#visit_expr v)
+  method s_let(l,n,v,kv) = SLet(l,self#visit_bind n, self#visit_expr v, kv)
+  method s_ref(l,a) = SRef(l,self#visit_ann_option a)
+  method s_when(l,t,b) = SWhen(l,self#visit_expr t, self#visit_expr b)
+  method s_contract(l,n,a) = SContract(l,self#visit_name n, self#visit_ann a)
+  method s_assign(l,i,v) = SAssign(l,self#visit_name i, self#visit_expr v)
+  method s_if_branch(l,t,b) = SIfBranch(l,self#visit_expr t, self#visit_expr b)
+  method s_if_pipe_branch(l,t,b) = SIfPipeBranch(l,self#visit_expr t, self#visit_expr b)
+  method s_if(l,b) = SIf(l,List.map self#visit_if_branch b)
+  method s_if_else(l,b,e) = SIfElse(l,List.map self#visit_if_branch b, self#visit_expr e)
+  method s_if_pipe(l,b) = SIfPipe(l,List.map self#visit_if_pipe_branch b)
+  method s_if_pipe_else(l,b,e) = SIfPipeElse(l,List.map self#visit_if_pipe_branch b, self#visit_expr e)
+  method s_cases_bind(l,t,b) = SCasesBind(l,t,self#visit_bind b)
+  method s_cases_branch(l,pl,n,a,b) =
+    SCasesBranch(l,pl,n,List.map self#visit_cases_bind a, self#visit_expr b)
+  method s_singleton_cases_branch(l,pl,n,b) =
+    SSingletonCasesBranch(l,pl,n,self#visit_expr b)
+  method s_cases(l,t,v,b) =
+    SCases(l,self#visit_ann t, self#visit_expr v, List.map self#visit_cases_branch b)
+  method s_cases_else(l,t,v,b,e) =
+    SCasesElse(l,self#visit_ann t, self#visit_expr v,
+               List.map self#visit_cases_branch b, self#visit_expr e)
+  method s_op(l,o,left,right) = SOp(l,o,self#visit_expr left, self#visit_expr right)
+  method s_check_test(l,o,r,lft,rt) =
+    SCheckTest(l,o,self#visit_expr_option r, self#visit_expr lft, self#visit_expr_option rt)
+  method s_paren(l,e) = SParen(l,self#visit_expr e)
+  method s_lam(l,p,ar,an,d,b,c) =
+    SLam(l,List.map self#visit_name p, List.map self#visit_bind ar,
+         self#visit_ann an, d, self#visit_expr b, self#visit_expr_option c)
+  method s_method(l,p,ar,an,d,b,c) =
+    SMethod(l,List.map self#visit_name p, List.map self#visit_bind ar,
+            self#visit_ann an, d, self#visit_expr b, self#visit_expr_option c)
+  method s_extend(l,s,f) = SExtend(l,self#visit_expr s, List.map self#visit_member f)
+  method s_update(l,s,f) = SUpdate(l,self#visit_expr s, List.map self#visit_member f)
+  method s_obj(l,f) = SObj(l, List.map self#visit_member f)
+  method s_array(l,v) = SArray(l, List.map self#visit_expr v)
+  method s_construct(l,m,c,v) = SConstruct(l,m,self#visit_expr c, List.map self#visit_expr v)
+  method s_app(l,f,a) = SApp(l,self#visit_expr f, List.map self#visit_expr a)
+  method s_prim_app(l,f,a) = SPrimApp(l,f,List.map self#visit_expr a)
+  method s_prim_val(l,n) = SPrimVal(l,n)
+  method s_id(l,i) = SId(l,self#visit_name i)
+  method s_id_var(l,i) = SIdVar(l,self#visit_name i)
+  method s_id_letrec(l,i,s) = SIdLetrec(l,self#visit_name i, s)
+  method s_undefined(l) = SUndefined(l)
+  method s_srcloc(l1,l2) = SSrcloc(l1,l2)
+  method s_num(l,n) = SNum(l,n)
+  method s_frac(l,n,d) = SFrac(l,n,d)
+  method s_bool(l,b) = SBool(l,b)
+  method s_str(l,s) = SStr(l,s)
+  method s_dot(l,o,f) = SDot(l,self#visit_expr o, f)
+  method s_get_bang(l,o,f) = SGetBang(l, self#visit_expr o, f)
+  method s_bracket(l,o,f) = SBracket(l, self#visit_expr o, self#visit_expr f)
+  method s_data(l,n,p,m,v,s,c) =
+    SData(l,n,List.map self#visit_name p,
+          List.map self#visit_expr m,
+          List.map self#visit_variant v,
+          List.map self#visit_member s,
+          self#visit_expr_option c)
+  method s_data_expr(l,n,nt,p,m,v,s,c) =
+    SDataExpr(l,n,self#visit_name nt,List.map self#visit_name p,
+              List.map self#visit_expr m,
+              List.map self#visit_variant v,
+              List.map self#visit_member s,
+              self#visit_expr_option c)
+  method s_for(l,i,bnd,a,b) = SFor(l,self#visit_expr i,
+                                   List.map self#visit_for_bind bnd,
+                                   self#visit_ann a, self#visit_expr b)
+  method s_check(l,n,b,k) = SCheck(l,n,self#visit_expr b, k)
 
-  let s_data_field(l,n,v) = SDataField(l,n,D.visit_expr v)
-  let s_mutable_field(l,n,a,v) = SMutableField(l,n,D.visit_ann a, D.visit_expr v)
-  let s_method_field(l,n,p,ar,an,d,b,c) =
-    SMethodField(l,n,List.map D.visit_name p, List.map D.visit_bind ar,
-                 D.visit_ann an, d, D.visit_expr b, visit_expr_option c)
+  method s_data_field(l,n,v) = SDataField(l,n,self#visit_expr v)
+  method s_mutable_field(l,n,a,v) = SMutableField(l,n,self#visit_ann a, self#visit_expr v)
+  method s_method_field(l,n,p,ar,an,d,b,c) =
+    SMethodField(l,n,List.map self#visit_name p, List.map self#visit_bind ar,
+                 self#visit_ann an, d, self#visit_expr b, self#visit_expr_option c)
 
-  let s_for_bind(l,b,v) = SForBind(l,D.visit_bind b, D.visit_expr v)
+  method s_for_bind(l,b,v) = SForBind(l,self#visit_bind b, self#visit_expr v)
 
-  let s_variant_member(l,m,b) = SVariantMember(l,m,D.visit_bind b)
+  method s_variant_member(l,m,b) = SVariantMember(l,m,self#visit_bind b)
 
-  let s_variant(l,c,n,m,w) =
-    SVariant(l,c,n,List.map D.visit_variant_member m,List.map D.visit_member w)
-  let s_singleton_variant(l,n,w) =
-    SSingletonVariant(l,n,List.map D.visit_member w)
+  method s_variant(l,c,n,m,w) =
+    SVariant(l,c,n,List.map self#visit_variant_member m,List.map self#visit_member w)
+  method s_singleton_variant(l,n,w) =
+    SSingletonVariant(l,n,List.map self#visit_member w)
 
-  let a_blank () = ABlank
-  let a_any () = AAny
-  let a_name(l,i) = AName(l,D.visit_name i)
-  let a_type_var(l,i) = ATypeVar(l,D.visit_name i)
-  let a_arrow(l,a,r,u) = AArrow(l,List.map D.visit_ann a, D.visit_ann r, u)
-  let a_method(l,a,r) = AMethod(l,List.map D.visit_ann a, D.visit_ann r)
-  let a_record(l,f) = ARecord(l,List.map D.visit_a_field f)
-  let a_app(l,an,ar) = AApp(l,D.visit_ann an, List.map D.visit_ann ar)
-  let a_pred(l,a,e) = APred(l,D.visit_ann a, D.visit_expr e)
-  let a_dot(l,o,f) = ADot(l,D.visit_name o, f)
+  method a_blank () = ABlank
+  method a_any () = AAny
+  method a_name(l,i) = AName(l,self#visit_name i)
+  method a_type_var(l,i) = ATypeVar(l,self#visit_name i)
+  method a_arrow(l,a,r,u) = AArrow(l,List.map self#visit_ann a, self#visit_ann r, u)
+  method a_method(l,a,r) = AMethod(l,List.map self#visit_ann a, self#visit_ann r)
+  method a_record(l,f) = ARecord(l,List.map self#visit_a_field f)
+  method a_app(l,an,ar) = AApp(l,self#visit_ann an, List.map self#visit_ann ar)
+  method a_pred(l,a,e) = APred(l,self#visit_ann a, self#visit_expr e)
+  method a_dot(l,o,f) = ADot(l,self#visit_name o, f)
 
-  let a_field(l,n,a) = AField(l,n,D.visit_ann a)
-end
+  method a_field(l,n,a) = AField(l,n,self#visit_ann a)
 
-module FlattenSingleBlocks : AST_MAP_VISITOR = struct
-  include DefaultMapVisitor
-
-  let s_block (l,stmts) = match stmts with
-    | x::[] -> visit_expr x
-    | _ -> SBlock(l,List.map visit_expr stmts)
 end
 
 (* Pretty Printing Functions *)
