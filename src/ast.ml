@@ -388,6 +388,64 @@ let block_ids b = match b with
 let toplevel_ids prog = match prog with
   | SProgram(_,_,_,_,b) -> block_ids b
 
+
+let expr_loc = function
+  | SModule (l,_,_,_,_,_,_) -> l
+  | STypeLetExpr (l,_,_) -> l
+  | SLetExpr (l,_,_) -> l
+  | SLetrec (l,_,_) -> l
+  | SHintExp (l,_,_) -> l
+  | SInstantiate (l,_,_) -> l
+  | SBlock (l,_) -> l
+  | SUserBlock (l,_) -> l
+  | SFun (l,_,_,_,_,_,_,_) -> l
+  | SType (l,_,_) -> l
+  | SNewtype (l,_,_) -> l
+  | SVar (l,_,_) -> l
+  | SRec (l,_,_) -> l
+  | SLet (l,_,_,_) -> l
+  | SRef (l,_) -> l
+  | SContract (l,_,_) -> l
+  | SWhen (l,_,_) -> l
+  | SAssign (l,_,_) -> l
+  | SIfPipe (l,_) -> l
+  | SIfPipeElse (l,_,_) -> l
+  | SIf (l,_) -> l
+  | SIfElse (l,_,_) -> l
+  | SCases (l,_,_,_) -> l
+  | SCasesElse (l,_,_,_,_) -> l
+  | SOp (l,_,_,_) -> l
+  | SCheckTest (l,_,_,_,_) -> l
+  | SCheckExpr (l,_,_) -> l
+  | SParen (l,_) -> l
+  | SLam (l,_,_,_,_,_,_) -> l
+  | SMethod (l,_,_,_,_,_,_) -> l
+  | SExtend (l,_,_) -> l
+  | SUpdate (l,_,_) -> l
+  | SObj (l,_) -> l
+  | SArray (l,_) -> l
+  | SConstruct (l,_,_,_) -> l
+  | SApp (l,_,_) -> l
+  | SPrimApp (l,_,_) -> l
+  | SPrimVal (l,_) -> l
+  | SId (l,_) -> l
+  | SIdVar (l,_) -> l
+  | SIdLetrec (l,_,_) -> l
+  | SUndefined l-> l
+  | SSrcloc (l,_) -> l
+  | SNum (l,_) -> l
+  | SFrac (l,_,_) -> l
+  | SBool (l,_) -> l
+  | SStr (l,_) -> l
+  | SDot (l,_,_) -> l
+  | SGetBang (l,_,_) -> l
+  | SBracket (l,_,_) -> l
+  | SData (l,_,_,_,_,_,_) -> l
+  | SDataExpr (l,_,_,_,_,_,_,_) -> l
+  | SFor (l,_,_,_,_) -> l
+  | SCheck (l,_,_,_) -> l
+
+
 class virtual ['name_ret,
                'program_ret,
                'import_type_ret,

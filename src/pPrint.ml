@@ -168,3 +168,4 @@ let label_align_surround label pp_open sep contents pp_close =
   group label +^ (align pp_open +^ (align (separate sep contents))) +^ (group ((sbreak 0) +^ pp_close))
 
 let pretty doc n = format n doc
+let pretty_string doc n = List.fold_right (fun x acc -> x ^ "\n" ^ acc) (pretty doc n) ""

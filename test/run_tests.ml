@@ -21,12 +21,20 @@ let print_msg color (msg : string) =
 
 let print_std = print_msg cyan
 
+let run_p_tests () =
+  if !run_parser_tests then begin
+    print_std "Running Parser Tests...\n";
+    run_test_tt_main ParserTest.suite;
+  end
+;;
+
 let () =
   print_std "Running Pretty-Printer Tests...\n";
     run_test_tt_main PPrintTest.suite;
   print_std "Running Lexer Tests...\n";
   run_test_tt_main LexerTest.suite;
-  if !run_parser_tests then begin
-    print_std "Running Parser Tests...\n";
-    run_test_tt_main ParserTest.suite;
-  end
+  run_p_tests();
+  print_std "Running AST Visitor Tests...\n";
+  run_test_tt_main VisitorTest.suite;
+  print_std "Running Desugaring Tests...\n";
+  run_test_tt_main DesugarTest.suite;
