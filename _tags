@@ -1,0 +1,3 @@
+<src> : include
+<test> : include
+true : package(oUnit, dyp, extlib, unix, ANSITerminal, batteries, sexplib)
