@@ -8,13 +8,6 @@ let ocamlfind_query pkg =
 let () =
   dispatch begin function
     | After_rules ->
-      (*let sexplib_dir = ocamlfind_query "sexplib" in
-      let type_conv_dir = ocamlfind_query "ppx_type_conv" in
-      let core_dir = ocamlfind_query "ppx_core" in
-      ocaml_lib ~extern:true ~dir:sexplib_dir "sexplib";
-      flag ["ocaml"; "pp"; "use_sexplib.syntax"]
-      & S[A"-I"; A type_conv_dir; A"-I"; A sexplib_dir; A "-I"; A core_dir;
-          A"ppx_core.cma"; A"ppx_type_conv.cma"; A"pa_sexp_conv.cma"];*)
       rule "dypgen"
         ~prods:["%.ml"]
         ~deps:["%.dyp"]
