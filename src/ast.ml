@@ -80,32 +80,96 @@ let str_raises_satisfies = str "raises-satisfies"
 let str_raises_violates = str "raises-violates"
 let str_percent = str "%"
 
+(** Represents locations in source code *)
+module Srcloc = struct
+  (** Source location type *)
+  type t =
+      Builtin of string (** Builtin Modules (name) *)
+    | Srcloc of string * int * int * int * int * int * int (** Source Location
+                                                               (source, start-line, start-column,
+                                                               start-char, end-line, end-column,
+                                                               end-char)*)
+
+  let of_positions (start : Lexing.position) (ending : Lexing.position) : t =
+    Srcloc(start.Lexing.pos_fname, start.Lexing.pos_lnum, start.Lexing.pos_cnum,
+           start.Lexing.pos_bol, ending.Lexing.pos_lnum, ending.Lexing.pos_cnum,
+           ending.Lexing.pos_bol)
+
+  (** Renders the given source location as a string, showing the file name as well if specified *)
+  let format show_file = function
+    | Builtin(s) -> "<builtin "^s^">"
+    | Srcloc(source,start_line,start_col,_,_,_,_) ->
+      let pfx = if show_file then source^": " else "" in
+      pfx^"line "^(string_of_int start_line)^", column "^(string_of_int start_col)
+
+  let key = function
+    | Builtin(s) -> s
+    | Srcloc(src,_,_,start_char,_,_,end_char) ->
+      src^":"^(string_of_int start_char)^"-"^(string_of_int end_char)
+
+  let before s1 s2 =
+    match (s1,s2) with
+    | (Builtin(m1), Builtin(m2)) -> (String.compare m1 m2) < 1
+    | (Builtin(_), Srcloc(_,_,_,_,_,_,_)) -> false
+    | (Srcloc(_,_,_,start_char1,_,_,_),Srcloc(_,_,_,start_char2,_,_,_)) ->
+      start_char1 < start_char2
+    | (Srcloc(_,_,_,_,_,_,_),Builtin(_)) -> true
+
+  let at_start = function
+    | Builtin(m) -> Builtin(m)
+    | Srcloc(src,start_line,start_col,start_char,_,_,_) ->
+      Srcloc(src,start_line,start_col,start_char,start_line,start_col,start_char)
+
+  let at_end = function
+    | Builtin(m) -> Builtin(m)
+    | Srcloc(src,_,_,_,end_line,end_col,end_char) ->
+      Srcloc(src,end_line,end_col,end_char,end_line,end_col,end_char)
+
+  (** Combines the two given source locations.
+      NOTE: It is assumed that both source locations are in the same file*)
+  let (+) s1 s2 =
+    match (s1,s2) with
+    | (Srcloc(src1,sline1,scol1,schar1,eline1,ecol1,echar1),
+       Srcloc(src2,sline2,scol2,schar2,eline2,ecol2,echar2)) ->
+      if (src1 <> src2) then
+        failwith ("Cannot combine srclocs from different files:\n\t"^
+                  (format true s1)^"\n\t"^(format true s2));
+      if (schar1 <= schar2) then
+        (if (echar1 >= echar2) then
+           s1
+         else
+           Srcloc(src1,sline1,scol1,schar1,eline2,ecol2,echar2))
+      else
+        (if (echar1 > echar2) then
+           Srcloc(src1,sline2,scol2,schar2,eline1,eline1,echar1)
+         else
+           s2)
+    | (Srcloc(_,_,_,_,_,_,_),_) -> failwith ("Cannot combine builtin:\n\t"^(format true s2))
+    | (_,Srcloc(_,_,_,_,_,_,_)) -> failwith ("Cannot combine builtin:\n\t"^(format true s1))
+    | (_,_) -> failwith ("Cannot combine builtins:\n\t"^(format true s1)^"\n\t"^(format true s2))
+
+  (** Alias for (+) *)
+  let combine = (+)
+
+  (** Convenience for checking if a source location is built in *)
+  let is_builtin = function
+    | Builtin(_) -> true
+    | _ -> false
+
+end
+
 (** Source Location Type *)
-type loc = {
-  source : string;
-  start_line : int;
-  start_col : int;
-  start_char : int;
-  end_line : int;
-  end_col : int;
-  end_char : int }
+type loc = Srcloc.t
 
 let use_dummy = ref false
 
-let dummy_loc : loc = {source="dummy"; start_line=(-1); start_col=(-1); start_char=(-1);
-                 end_line=0; end_col=0; end_char=0}
+let dummy_loc : loc = Srcloc.Srcloc("dummy",-1,-1,-1,-1,-1,-1)
 
 let make_loc (start : Lexing.position) (ending : Lexing.position) : loc =
   if !use_dummy then (* For Parser Tests *)
     dummy_loc
   else
-    {source     = start.Lexing.pos_fname;
-     start_line = start.Lexing.pos_lnum;
-     start_col  = start.Lexing.pos_cnum;
-     start_char = start.Lexing.pos_bol;
-     end_line   = ending.Lexing.pos_lnum;
-     end_col    = ending.Lexing.pos_cnum;
-     end_char   = ending.Lexing.pos_bol}
+    Srcloc.of_positions start ending
 
 (** Syntax Type for names *)
 type name =
@@ -786,6 +850,7 @@ class default_map_visitor = object(self)
            cases_branch,
            ann,
            a_field] ast_visitor_base
+
   method private visit_expr_option = function
     | None -> None
     | Some(v) -> Some(self#visit_expr v)
@@ -958,6 +1023,265 @@ class default_map_visitor = object(self)
   method a_dot(l,o,f) = ADot(l,self#visit_name o, f)
 
   method a_field(l,n,a) = AField(l,n,self#visit_ann a)
+
+end
+
+class virtual ['a] folding_visitor = object(self)
+  inherit ['a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a] ast_visitor_base
+end
+
+class default_iter_visitor = object(self)
+  inherit [bool] folding_visitor
+
+  method visit_expr_option = function
+    | None -> true
+    | Some(v) -> self#visit_expr v
+
+  method visit_ann_option = function
+    | None -> true
+    | Some(v) -> self#visit_ann v
+
+  method s_underscore _ = true
+  method s_name _ = true
+  method s_global _ = true
+  method s_type_global _ = true
+  method s_atom _ = true
+
+  method s_defined_value (_, v) = self#visit_expr v
+  method s_defined_type (_, t) = self#visit_ann t
+
+  method s_module(_,answer,dv,dt,provides,types,checks) =
+    self#visit_expr answer
+    && (List.for_all self#visit_defined_value dv)
+    && (List.for_all self#visit_defined_type dt)
+    && self#visit_expr provides
+    && (List.for_all self#visit_a_field types)
+    && self#visit_expr checks
+
+  method s_program(_,_provide,provided_types,imports,body) =
+    self#visit_provide _provide
+    && self#visit_provide_types provided_types
+    && (List.for_all self#visit_import imports)
+    && self#visit_expr body
+
+  method s_import(_,import_type,name) =
+    self#visit_import_type import_type
+    && self#visit_name name
+
+  method s_import_complete(_,values,types,m,vals_name,types_name) =
+    (List.for_all self#visit_name values)
+    && (List.for_all self#visit_name types)
+    && self#visit_import_type m
+    && self#visit_name vals_name
+    && self#visit_name types_name
+
+  method s_include(_,import_type) =
+    self#visit_import_type import_type
+
+  method s_file_import _ = true
+  method s_const_import _ = true
+  method s_special_import _ = true
+
+  method s_import_types(_,_,name,types) =
+    self#visit_name name && self#visit_name types
+
+  method s_import_fields(_,fields,_) = List.for_all self#visit_name fields
+
+  method s_provide_complete _ = true
+  method s_provide(_,e) = self#visit_expr e
+  method s_provide_all _ = true
+  method s_provide_none _ = true
+  method s_provide_types(_,anns) = List.for_all self#visit_a_field anns
+  method s_provide_types_all _ = true
+  method s_provide_types_none _ = true
+
+  method s_bind(_,_,name,ann) =
+    self#visit_name name && self#visit_ann ann
+
+  method s_var_bind(_,bind,expr) =
+    self#visit_bind bind && self#visit_expr expr
+  method s_let_bind(_,bind,expr) =
+    self#visit_bind bind && self#visit_expr expr
+
+  method s_type_bind(_,name,ann) =
+    self#visit_name name && self#visit_ann ann
+  method s_newtype_bind(_,name,namet) =
+    self#visit_name name && self#visit_name namet
+
+  method s_type_let_expr(_,binds,body) =
+    List.for_all self#visit_type_let_bind binds
+    && self#visit_expr body
+
+  method s_let_expr(_,binds,body) =
+    List.for_all self#visit_let_bind binds
+    && self#visit_expr body
+
+  method s_letrec_bind(_,bind,expr) =
+    self#visit_bind bind && self#visit_expr expr
+
+  method s_letrec(_,binds,body) =
+    List.for_all self#visit_letrec_bind binds
+    && self#visit_expr body
+
+  method s_hint_exp(_,_,exp) = self#visit_expr exp
+
+  method s_instantiate(_,expr,params) =
+    self#visit_expr expr
+    && List.for_all self#visit_ann params
+
+  method s_block(_,stmts) = List.for_all self#visit_expr stmts
+  method s_user_block(_,body) = self#visit_expr body
+
+  method s_fun(_,_,params,args,ann,_,body,_check) =
+    List.for_all self#visit_name params
+    && List.for_all self#visit_bind args
+    && self#visit_ann ann
+    && self#visit_expr body
+    && self#visit_expr_option _check
+  method s_type(_,name,ann) =
+    self#visit_name name && self#visit_ann ann
+  method s_newtype(_,name,namet) =
+    self#visit_name name && self#visit_name namet
+  method s_var(_,name,value) =
+    self#visit_bind name && self#visit_expr value
+  method s_rec(_,name,value) =
+    self#visit_bind name && self#visit_expr value
+  method s_let(_,name,value,_) =
+    self#visit_bind name && self#visit_expr value
+  method s_ref(_,ann) = self#visit_ann_option ann
+  method s_when(_,test,block) =
+    self#visit_expr test && self#visit_expr block
+  method s_contract(_,name,ann) =
+    self#visit_name name && self#visit_ann ann
+  method s_assign(_,id,value) =
+    self#visit_name id && self#visit_expr value
+  method s_if_branch(_,test,body) =
+    self#visit_expr test && self#visit_expr body
+  method s_if_pipe_branch(_,test,body) =
+    self#visit_expr test && self#visit_expr body
+  method s_if(_,branches) = List.for_all self#visit_if_branch branches
+  method s_if_else(_,branches,_else) =
+    List.for_all self#visit_if_branch branches && self#visit_expr _else
+  method s_if_pipe(_,branches) = List.for_all self#visit_if_pipe_branch branches
+  method s_if_pipe_else(_,branches,_else) =
+    List.for_all self#visit_if_pipe_branch branches && self#visit_expr _else
+  method s_cases_bind(_,_,bind) = self#visit_bind bind
+  method s_cases_branch(_,_,_,args,body) =
+    List.for_all self#visit_cases_bind args && self#visit_expr body
+  method s_singleton_cases_branch(_,_,_,body) = self#visit_expr body
+  method s_cases(_,typ,value,branches) =
+    self#visit_ann typ && self#visit_expr value
+    && List.for_all self#visit_cases_branch branches
+  method s_cases_else(_,typ,value,branches,_else) =
+    self#visit_ann typ && self#visit_expr value
+    && List.for_all self#visit_cases_branch branches
+    && self#visit_expr _else
+  method s_op(_,_,l,r) = self#visit_expr l && self#visit_expr r
+  method s_check_test(_,_,refinement,left,right) =
+    self#visit_expr_option refinement
+    && self#visit_expr left
+    && self#visit_expr_option right
+  method s_paren(_,expr) = self#visit_expr expr
+  method s_lam(_,params,args,ann,_,body,_check) =
+    List.for_all self#visit_name params
+    && List.for_all self#visit_bind args
+    && self#visit_ann ann
+    && self#visit_expr body
+    && self#visit_expr_option _check
+  method s_method(_,params,args,ann,_,body,_check) =
+    List.for_all self#visit_name params
+    && List.for_all self#visit_bind args
+    && self#visit_ann ann
+    && self#visit_expr body
+    && self#visit_expr_option _check
+  method s_extend(_,super,fields) =
+    self#visit_expr super
+    && List.for_all self#visit_member fields
+  method s_update(_,super,fields) =
+    self#visit_expr super
+    && List.for_all self#visit_member fields
+  method s_obj(_,fields) =
+    List.for_all self#visit_member fields
+  method s_array(_,values) =
+    List.for_all self#visit_expr values
+  method s_construct(_,m,constructor,values) =
+    self#visit_expr constructor
+    && List.for_all self#visit_expr values
+  method s_app(_,_fun,args) =
+    self#visit_expr _fun
+    && List.for_all self#visit_expr args
+  method s_prim_app(_,_,args) =
+    List.for_all self#visit_expr args
+  method s_prim_val _ = true
+  method s_id(_,id) = self#visit_name id
+  method s_id_var(_,id) = self#visit_name id
+  method s_id_letrec(_,id,_) = self#visit_name id
+  method s_undefined _ = true
+  method s_srcloc _ = true
+  method s_num _ = true
+  method s_frac _ = true
+  method s_bool _ = true
+  method s_str _ = true
+  method s_dot(_,obj,_) = self#visit_expr obj
+  method s_get_bang(_,obj,_) = self#visit_expr obj
+  method s_bracket(_,obj,field) = self#visit_expr obj && self#visit_expr field
+  method s_data(_,_,params,mixins,variants,shared_members,_check) =
+    List.for_all self#visit_name params
+    && List.for_all self#visit_expr mixins
+    && List.for_all self#visit_variant variants
+    && List.for_all self#visit_member shared_members
+    && self#visit_expr_option _check
+  method s_data_expr(_,_,namet,params,mixins,variants,shared_members,_check) =
+    self#visit_name namet
+    && List.for_all self#visit_name params
+    && List.for_all self#visit_expr mixins
+    && List.for_all self#visit_variant variants
+    && List.for_all self#visit_member shared_members
+    && self#visit_expr_option _check
+  method s_for(_,iterator,bindings,ann,body) =
+    self#visit_expr iterator
+    && List.for_all self#visit_for_bind bindings
+    && self#visit_ann ann
+    && self#visit_expr body
+  method s_check(_,_,body,_) = self#visit_expr body
+  method s_check_expr _ = failwith "No visitor field for SCheckExpr"
+
+  method s_data_field(_,_,value) = self#visit_expr value
+  method s_mutable_field(_,_,ann,value) = self#visit_ann ann && self#visit_expr value
+  method s_method_field(_,_,params,args,ann,_,body,_check) =
+    List.for_all self#visit_name params
+    && List.for_all self#visit_bind args
+    && self#visit_ann ann
+    && self#visit_expr body
+    && self#visit_expr_option _check
+
+  method s_for_bind(_,bind,value) = self#visit_bind bind && self#visit_expr value
+
+  method s_variant_member(_,_,bind) = self#visit_bind bind
+
+  method s_variant(_,_,_,members,with_members) =
+    List.for_all self#visit_variant_member members
+    && List.for_all self#visit_member with_members
+  method s_singleton_variant(_,_,with_members) = List.for_all self#visit_member with_members
+
+  method a_blank _ = true
+  method a_any _ = true
+  method a_name _ = true
+  method a_type_var _ = true
+  method a_arrow(_,args,ret,_) =
+    List.for_all self#visit_ann args && self#visit_ann ret
+  method a_method(_,args,ret) =
+    List.for_all self#visit_ann args && self#visit_ann ret
+  method a_record(_,fields) =
+    List.for_all self#visit_a_field fields
+  method a_app(_,ann,args) =
+    self#visit_ann ann
+    && List.for_all self#visit_ann args
+  method a_pred(_,ann,exp) =
+    self#visit_ann ann && self#visit_expr exp
+  method a_dot(_,obj,_) = self#visit_name obj
+  method a_field(_,_,ann) = self#visit_ann ann
+  method a_checked _ = failwith "No visitor field for AChecked"
 
 end
 
@@ -1348,10 +1672,7 @@ and afield_tosource a = match a with
   | AField(_,n,ann) -> infix indent 1 str_coloncolon (str n) (ann_tosource ann)
 
 (* S-Expression Conversion Functions (Used for Debug Output) *)
-let str_of_loc {source=src;start_line=sl;start_col=sc;start_char=sch;
-                   end_line=el;end_col=ec;end_char=ech} =
-  sprintf "[LOC<%s>: (%d:%d:%d)-(%d:%d:%d)]"
-    src sl sc sch el ec ech
+let str_of_loc = Srcloc.format true
 
 let sexp_of_loc l = Sexp.Atom (str_of_loc l)
 
