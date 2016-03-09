@@ -445,6 +445,26 @@ let binding_ids stmt =
     @ (List.flatten (List.map variant_ids variants))
   | _ -> []
 
+let ann_loc = function
+  | ABlank
+  | AAny -> dummy_loc
+  | AApp(l,_,_)
+  | AArrow(l,_,_,_)
+  | APred(l,_,_)
+  | AMethod(l,_,_)
+  | ARecord(l,_)
+  | ADot(l,_,_)
+  | AName(l,_)
+  | ATypeVar(l,_) -> l
+  | _ -> failwith "Can't call ann_loc with AChecked"
+
+let get_op_fun_name = function
+  | "op==" -> "equal-always"
+  | "op=~" -> "equal-now"
+  | "op<=>" -> "identical"
+  | opname -> failwith ("Unknown op: " ^ opname)
+
+
 let block_ids b = match b with
   | SBlock(_,stmts) -> List.flatten(List.map binding_ids stmts)
   | _ -> failwith "Non-block given to block_ids"
