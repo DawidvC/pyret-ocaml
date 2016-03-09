@@ -1,7 +1,11 @@
 (**
    ValueSeleton type. Like the Pyret version, except
    there is no equivalent to `vs-value'. *)
-type t
+type t =
+    VSStr of string
+  | VSCollection of string * t list
+  | VSConstr of string * t list
+  | VSSeq of t list
 
 (** Returns the string representation of the given ValueSkeleton. *)
 val render : t -> string
