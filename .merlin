@@ -1,8 +1,10 @@
 S ./src
+S ./src/base
 S ./test
 
 B _build
 B _build/src
+B _build/src/base
 B _build/test
 
 PKG oUnit
