@@ -51,11 +51,7 @@ let reserved_names = List.fold_left (fun acc x -> SSet.add x acc) SSet.empty [
     "__proto__"
   ]
 
-let list_find : 'a. ('a -> bool) -> 'a list -> 'a option = fun pred list ->
-  try
-    Some(List.find pred list)
-  with
-  | Not_found -> None
+let list_find = U.list_find
 
 let add_error err =
   errors := err :: !errors;

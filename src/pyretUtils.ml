@@ -15,3 +15,10 @@ let join_str (lst : string list) (sep : string) =
 let last : 'a. 'a list -> 'a = function
   | [] -> failwith "Cannot take the last of an empty list"
   | (hd :: tl) -> (List.fold_left (fun _ x -> x) hd tl)
+
+(** Returns an option type matching the first item in the list satisfying `pred', if found. *)
+let list_find : 'a. ('a -> bool) -> 'a list -> 'a option = fun pred list ->
+  try
+    Some(List.find pred list)
+  with
+  | Not_found -> None
