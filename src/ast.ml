@@ -187,6 +187,21 @@ let name_key n = match n with
   | STypeGlobal(s) -> "tglobal#" ^ s
   | SAtom(b,s) -> "atom#" ^ b ^ "#" ^ (string_of_int s)
 
+(** Returns the given name as a string *)
+let name_toname = function
+  | SUnderscore(_) -> "_"
+  | SName(_,s)
+  | SGlobal(s)
+  | STypeGlobal(s)
+  | SAtom(s,_) -> s
+
+let name_tosourcestring = function
+  | SUnderscore(_) -> "_"
+  | SName(_,s)
+  | SGlobal(s) -> s
+  | STypeGlobal(s) -> "$type$"^s
+  | SAtom(base,serial) -> base ^ (string_of_int serial)
+
 (** Comparison function for name types *)
 let compare_names n1 n2 = String.compare (name_key n1) (name_key n2)
 
