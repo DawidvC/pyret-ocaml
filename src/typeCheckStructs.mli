@@ -14,7 +14,7 @@ module TCInfo : sig
 
   val to_vs : t -> ValueSkeleton.t
 
-  val empty : string option -> t
+  val empty : string -> t
 
   val add_binding_string : string -> TypeStructs.Type.t -> t -> t
 
