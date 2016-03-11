@@ -1,7 +1,8 @@
 module A = Ast
 module LA = ListAux
-module SD = Map.Make(String)
 module U = PyretUtils
+module SD = U.StringDict
+module MSD = U.MutableStringDict
 module VS = ValueSkeleton
 
 let all2_strict = LA.all2_strict
@@ -17,21 +18,26 @@ let dict_to_string : 'a. ('a -> VS.t) -> 'a SD.t -> VS.t = fun to_vs dict ->
         [VS.VSStr(key); VS.VSStr(" => "); to_vs value; VS.VSStr(", ")] @ acc) dict [] in
   VS.VSSeq([VS.VSStr("{")] @ items @ [VS.VSStr("}")])
 
+let mut_dict_to_string : 'a. ('a -> VS.t) -> 'a MSD.t -> VS.t = fun to_vs dict ->
+  let items = MSD.fold (fun key value -> function
+      | [] -> [VS.VSStr(key); VS.VSStr(" => "); to_vs value]
+      | (_ as acc) ->
+        [VS.VSStr(key); VS.VSStr(" => "); to_vs value; VS.VSStr(", ")] @ acc) dict [] in
+  VS.VSSeq([VS.VSStr("{")] @ items @ [VS.VSStr("}")])
+
 let rec interleave lst item =
   match lst with
   | []
   | _ :: [] -> lst
   | hd :: tl -> hd :: (item :: (interleave tl item))
 
-type ('a, 'b) pair = Pair of 'a * 'b
+module Pair = U.Pair
 
-let on_left p f =
-  match p with
-  | Pair(l,r) -> Pair(f l,r)
+type ('a, 'b) pair = ('a, 'b) Pair.t
 
-let on_right p f =
-  match p with
-  | Pair(l,r) -> Pair(l, f r)
+let on_left = Pair.on_left
+
+let on_right = Pair.on_right
 
 module Comparison = struct
   type t =
