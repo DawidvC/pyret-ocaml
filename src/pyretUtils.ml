@@ -84,3 +84,29 @@ module Pair = struct
     function
     | Pair(l,r) -> Pair(l, f r)
 end
+
+module Either = struct
+  type ('a, 'b) t =
+    | Left of 'a
+    | Right of 'b
+
+  let map_left : 'a 'b 'c. ('a -> 'c) -> ('a,'b) t -> ('c,'b) t = fun f ->
+    function
+    | Left(v) -> Left(f v)
+    | Right(v) -> Right(v)
+
+  let map_right : 'a 'b 'c. ('b -> 'c) -> ('a,'b) t -> ('a,'c) t = fun f ->
+    function
+    | Right(v) -> Right(f v)
+    | Left(v) -> Left(v)
+
+  let rec all_left : 'a 'b. ('a,'b) t list -> 'a list = function
+    | [] -> []
+    | (Right(_)) :: _ -> raise (Invalid_argument("Right item found"))
+    | (Left(hd)) :: tl -> hd :: (all_left tl)
+
+  let rec all_right : 'a 'b. ('a,'b) t list -> 'b list = function
+    | [] -> []
+    | (Left(_)) :: _ -> raise (Invalid_argument("Left item found"))
+    | (Right(hd)) :: tl -> hd :: (all_right tl)
+end

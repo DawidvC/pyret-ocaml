@@ -15,6 +15,7 @@ let mut_dict_to_string = TS.mut_dict_to_string
 module Type = TS.Type
 
 module Pair = PyretUtils.Pair
+module Either = PyretUtils.Either
 
 module TypeMember = TS.TypeMember
 module TypeVariant = TS.TypeVariant
@@ -395,3 +396,51 @@ end = struct
 end
 
 let resolve_alias = Context.resolve_alias
+
+let rec fold_synthesis (f : ('b -> Context.t -> SynthesisResult.t)) (lst : 'b list) (context : Context.t) : ((Context.t, ((Ast.expr, Ast.let_bind) Either.t) list) Pair.t) FoldResult.t =
+  let (+:) a b = a :: b in
+  let add_item i = fun x -> FoldResult.FoldResult (Pair.on_right ((+:) i) x) in
+  match lst with
+  | [] -> FoldResult.FoldResult(Pair.Pair(context, []))
+  | hd :: tl ->
+    match f hd context with
+    | SynthesisResult.SynthesisResult(ast,loc,typ,out_context) ->
+      FoldResult.bind (add_item (Either.Left ast))
+        (fold_synthesis f tl out_context)
+    | SynthesisResult.SynthesisBindingResult(binding,typ,out_context) ->
+      let binding_id = function
+        | A.SLetBind(_,b,_)
+        | A.SVarBind(_,b,_) ->
+          match b with
+          | A.SBind(_,_,id,_) -> id in
+      let new_context = Context.add_term_var
+          (A.name_key (binding_id binding))
+          (Context.apply typ out_context)
+          out_context in
+      FoldResult.bind (add_item (Either.Right binding))
+        (fold_synthesis f tl new_context)
+    | SynthesisResult.SynthesisErr(errors) -> FoldResult.FoldErrors(errors)
+
+let rec fold_checking (f : ('b -> Context.t -> CheckingResult.t)) (lst : 'b list) (context : Context.t) : ((Context.t, Ast.expr list) Pair.t) FoldResult.t =
+  let (+:) a b = a :: b in
+  let add_item i = fun x -> FoldResult.FoldResult (Pair.on_right ((+:) i) x) in
+  match lst with
+  | [] -> FoldResult.FoldResult(Pair.Pair(context, []))
+  | hd :: tl ->
+    match f hd context with
+    | CheckingResult.CheckingResult(ast,out_context) ->
+      FoldResult.bind (add_item ast) (fold_checking f tl out_context)
+    | CheckingResult.CheckingErr(errors) -> FoldResult.FoldErrors(errors)
+
+let rec collapse_fold_list (results : 'b FoldResult.t list) : 'b list FoldResult.t =
+  match results with
+  | [] -> FoldResult.FoldResult([])
+  | hd :: tl ->
+    FoldResult.bind
+      (fun result ->
+         FoldResult.bind (fun rest_results -> FoldResult.FoldResult(result :: rest_results))
+           (collapse_fold_list tl))
+      hd
+
+let map_result (f : ('a -> 'b FoldResult.t)) (lst : 'a list) : 'b list FoldResult.t =
+  collapse_fold_list (List.map f lst)
