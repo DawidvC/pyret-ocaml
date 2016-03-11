@@ -40,6 +40,12 @@ module MutableStringDict = struct
     let dict = create (List.length list) in
     add_each dict list;
     dict
+
+  let lookup : 'a. 'a t -> string -> 'a option = fun dict key ->
+    if mem dict key then
+      Some(find dict key)
+    else
+      None
 end
 
 (** Immutable String Dictionary Module *)
@@ -52,6 +58,12 @@ module StringDict = struct
 
   let of_list : 'a. (string * 'a) list -> 'a t = fun list ->
     add_each empty list
+
+  let lookup : 'a. string -> 'a t -> 'a option = fun key dict ->
+    if mem key dict then
+      Some(find key dict)
+    else
+      None
 end
 
 (** Pair of data *)

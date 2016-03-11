@@ -25,3 +25,10 @@ let list_of_values : 'a. ('a -> string) -> 'a list -> t list = fun conv vs ->
 
 let of_values : 'a. ('a -> string) -> 'a list -> t = fun conv vs ->
   VSSeq(list_of_values conv vs)
+
+let of_list : 'a. ('a -> t) -> 'a list -> ?label:bool -> unit -> t = fun conv vs ?(label=true) () ->
+  let mapped = List.map conv vs in
+  if label then
+    VSCollection("list", mapped)
+  else
+    VSStr(render_list ", " mapped)

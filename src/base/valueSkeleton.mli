@@ -18,3 +18,8 @@ val list_of_values : ('a -> string) -> 'a list -> t list
 
 (** Creates a converter from value lists to ValueSkeleton types. *)
 val of_values : ('a -> string) -> 'a list -> t
+
+(** Creates a ValueSkeleton list of values using the given items and converter.
+If ~label is true (the default), then the output will be formatted as a Pyret-style
+    list (i.e. `[list: elts ...]') *)
+val of_list : ('a -> t) -> 'a list -> ?label:bool -> unit -> t

@@ -1,4 +1,5 @@
 module ED = ErrorDisplay
+module VS = ValueSkeleton
 
 type loc = Ast.loc
 
@@ -44,3 +45,9 @@ let render_reason =
   | WFErr(msg,loc) ->
     ED.error [ED.para [ED.Text("Well-formedness:");ED.Text(msg);ED.Text("at")]; draw_and_highlight loc]
   | _ -> failwith "NYI (render_reason)"
+
+let to_vs =
+  let loc_to_vs l = VS.VSStr(Ast.str_of_loc l) in
+  function
+  | WFErr(msg,loc) -> VS.VSConstr("wf-err", [VS.VSStr(msg); loc_to_vs loc])
+  | _ -> failwith "NYI (to_vs) CompileError.t"
