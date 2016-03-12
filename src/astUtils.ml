@@ -111,7 +111,7 @@ let binding_type_env_from_env env =
        match globals with
        | CompileStructs.Globals.Globals(_,types) ->
          List.map fst (SD.bindings types));
-  acc
+  MSD.freeze acc
 
 let binding_env_from_env env =
   let acc = MSD.create 20 in
@@ -122,7 +122,7 @@ let binding_env_from_env env =
        match globals with
        | CompileStructs.Globals.Globals(values,_) ->
          List.map fst (SD.bindings values));
-  acc
+  MSD.freeze acc
 
 type ('a, 'c) env_res = { val_env : 'a; type_env : 'c}
 
@@ -155,15 +155,16 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
 
   method s_type_let_expr(l,binds,body) =
     let new_envs = self#get_env() in
-    let (bound_env, bs) = PyretUtils.fold_while (fun (acc,bs) b ->
-        let updated = bind_handlers.s_type_let_bind b acc.val_env acc.type_env in
-        let visit_envs =
-          new default_env_iter_visitor updated.val_env updated.type_env bind_handlers in
-        let new_bind = visit_envs#visit_type_let_bind b in
-        if new_bind then
-          PyretUtils.Either.Left(updated, true)
-        else
-          PyretUtils.Either.Right(updated, false)) (new_envs, true) binds in
+    let fold_fun (acc,bs) = fun b ->
+      let updated = bind_handlers.s_type_let_bind b acc.val_env acc.type_env in
+      let visit_envs =
+        new default_env_iter_visitor updated.val_env updated.type_env bind_handlers in
+      let new_bind = visit_envs#visit_type_let_bind b in
+      if new_bind then
+        PyretUtils.Either.Left(updated, true)
+      else
+        PyretUtils.Either.Right(updated, false) in
+    let (bound_env, bs) = PyretUtils.fold_while fold_fun (new_envs, true) binds in
     let new_visitor =
       new default_env_iter_visitor bound_env.val_env bound_env.type_env bind_handlers in
     bs && new_visitor#visit_expr body
@@ -248,7 +249,7 @@ let binding_handlers = {
   s_header = (fun imp env type_env ->
       match imp with
       | Ast.SImportComplete(l,values,types,import_type,vals_name,types_name) ->
-        let (env, type_env) = (MSD.copy env, MSD.copy type_env) in
+        let (env, type_env) = (SD.unfreeze env, SD.unfreeze type_env) in
         MSD.add env (Ast.name_key vals_name) (EBind(l, false, BUnknown));
         MSD.add type_env (Ast.name_key types_name) (EBind(l, false, BTyp));
         List.iter (fun v ->
@@ -257,7 +258,260 @@ let binding_handlers = {
         List.iter (fun t ->
             MSD.add type_env (Ast.name_key t) (EBind(l, false, BImport(import_type)))
         ) types;
-        { val_env = env; type_env = type_env }
+        { val_env = MSD.freeze env; type_env = MSD.freeze type_env }
       | _ -> failwith ("Internal Error: incomplete import given to binding_handlers")
-    )
+    );
+  s_param_bind = (fun l param type_env ->
+      SD.add (Ast.name_key param) (EBind(l, false, BTyp)) type_env);
+  s_type_let_bind = (fun tlb env type_env ->
+      match tlb with
+      | Ast.STypeBind(l,name,ann) ->
+        {
+          val_env = env;
+          type_env = SD.add (Ast.name_key name) (EBind(l,false,BTyp)) type_env
+        }
+      | Ast.SNewtypeBind(l,tname,bname) ->
+        {
+          val_env = SD.add (Ast.name_key bname) (EBind(l,false,BUnknown)) env;
+          type_env = SD.add (Ast.name_key tname) (EBind(l,false,BTyp)) type_env;
+        }
+    );
+  s_let_bind = (fun lb env ->
+      let bind_id = function
+        | Ast.SBind(_,_,id,_) -> id in
+      match lb with
+      | Ast.SLetBind(l2,bind,value) -> SD.add (Ast.name_key (bind_id bind)) (EBind(l2,false,bind_or_unknown value env)) env
+      | Ast.SVarBind(l2,bind,value) -> SD.add (Ast.name_key (bind_id bind)) (EBind(l2,false,BUnknown)) env);
+  s_letrec_bind = (fun lrb env ->
+      let bind_id = function
+        | Ast.SBind(_,_,id,_) -> id in
+      match lrb with
+      | A.SLetrecBind(l2,bind,value) ->
+        SD.add (Ast.name_key (bind_id bind)) (EBind(l2,false,bind_or_unknown value env)) env
+    );
+  s_bind = (fun b env ->
+      match b with
+      | Ast.SBind(l,_,id,_) ->
+        SD.add (Ast.name_key id) (EBind(l,false,BUnknown)) env)
 }
+
+
+class binding_env_iter_visitor initial_env = object(self)
+  inherit [binding SD.t, binding SD.t] default_env_iter_visitor
+      (binding_env_from_env initial_env)
+      (binding_type_env_from_env initial_env)
+      binding_handlers
+end
+
+class ['a,'c] link_list_visitor initial_env = object(self)
+end
+
+
+class bad_assignments_visitor initial_env = object(self)
+  inherit binding_env_iter_visitor initial_env
+  val errors : CompileStructs.CompileError.t list ref = ref [];
+
+  method add_error err = errors := err :: !errors
+  method get_errors () = !errors
+
+  method s_assign(loc,id,value) =
+    (match (bind_exp (Ast.SId(loc,id)) env) with
+    | None -> ();
+    | Some(b) ->
+      let (mut, bloc) = (match b with | EBind(l,b,_) -> b,l) in
+      if (not mut) then
+        self#add_error (CompileStructs.CompileError.BadAssignment(Ast.name_toname id, loc, bloc)););
+    self#visit_expr value
+end
+
+let bad_assignments initial_env ast =
+  let visitor = new bad_assignments_visitor initial_env in
+  let _ = visitor#visit_program ast in
+  visitor#get_errors()
+
+class inline_lams = object(self)
+  inherit Ast.default_map_visitor
+
+  method s_app(loc,f,exps) =
+    match f with
+    | Ast.SLam(l,_,args,ann,_,body,_) when (List.length args) = (List.length exps) ->
+      let a = Ast.global_names "inline_body" in
+      let let_binds = List.map2 (fun arg exp ->
+          let argloc = match arg with
+            | Ast.SBind(l,_,_,_) -> l in
+          A.SLetBind(argloc,arg,self#visit_expr exp)) args exps in
+      (match ann with
+       | A.ABlank
+       | A.AAny -> A.SLetExpr(l,let_binds, self#visit_expr body)
+       | _ -> A.SLetExpr(l, let_binds @ [A.SLetBind(Ast.expr_loc body, Ast.SBind(l, false, a, ann), self#visit_expr body)], A.SId(l, a)))
+    | _ -> Ast.SApp(loc, self#visit_expr f, List.map self#visit_expr exps)
+
+end
+
+class check_unbound_class initial_env = object(self)
+  inherit binding_env_iter_visitor initial_env
+
+  val errors : CompileStructs.CompileError.t list ref = ref []
+  method add_error err = errors := err :: !errors
+  method get_errors () = !errors
+
+  method handle_id this_id =
+    match this_id with
+    | Ast.SId(_,id)
+    | Ast.SIdVar(_,id)
+    | Ast.SIdLetrec(_,id,_) ->
+      (match id with
+       | Ast.SUnderscore(l) -> self#add_error (CompileStructs.CompileError.UnderscoreAsExpr(l))
+       | _ ->
+         match (bind_exp this_id env) with
+          | None -> self#add_error (CompileStructs.CompileError.UnboundId(this_id))
+          | Some(_) -> ())
+    | _ -> failwith "non-id given to handle_id"
+
+  method handle_type_id ann =
+    match ann with
+    | Ast.AName(_,id) ->
+      (match id with
+       | Ast.SUnderscore(l) -> self#add_error (CompileStructs.CompileError.UnderscoreAsAnn(l))
+       | _ ->
+         if (not (SD.mem (Ast.name_key id) env)) then
+           self#add_error (CompileStructs.CompileError.UnboundTypeId(ann))
+         else ())
+    | _ -> failwith "non-id given to handle_type_id"
+
+  method s_id(loc,id) =
+    self#handle_id (A.SId(loc,id));
+    true
+
+  method s_id_var(loc,id) =
+    self#handle_id (A.SIdVar(loc,id));
+    true
+
+  method s_id_letrec(loc,id,safe) =
+    self#handle_id (A.SIdLetrec(loc,id,safe));
+    true
+
+  method s_assign(loc,id,value) =
+    (match bind_exp (A.SId(loc,id)) env with
+     | None -> self#add_error (CompileStructs.CompileError.UnboundVar(Ast.name_toname id, loc))
+     | _ -> ());
+    self#visit_expr value
+
+  method a_name(loc,id) =
+    self#handle_type_id (Ast.AName(loc,id));
+    true
+
+  method a_dot(loc,name,field) =
+    self#handle_type_id (Ast.AName(loc,name));
+    true
+end
+
+let check_unbound initial_env ast =
+  let visitor = new check_unbound_class initial_env in
+  let _ = visitor#visit_program ast in
+  visitor#get_errors()
+
+let value_delays_exec_of name = function
+  | A.SLam(_,_,_,_,_,_,_)
+  | A.SMethod(_,_,_,_,_,_,_) -> true
+  | _ -> false
+
+class mk_letrec_visitor env = object(self)
+  inherit Ast.default_map_visitor
+
+  val env : bool SD.t = env
+
+  method s_letrec(l,binds,body) =
+    let lrb_bind = function
+      | Ast.SLetrecBind(_,b,_) -> b in
+    let bind_name = function
+      | Ast.SBind(_,_,i,_) -> i in
+    let bind_envs = List.mapi (fun i -> function
+        | Ast.SLetrecBind(_,b,value) ->
+          match b with
+          | Ast.SBind(loc,_,id,_) ->
+            let rhs_is_delayed = value_delays_exec_of id value in
+            let acc = SD.unfreeze env in
+            List.iteri (fun j -> function
+                | Ast.SLetrecBind(_,b,_) ->
+                  match b with
+                  | Ast.SBind(b2loc,_,b2id,b2value) ->
+                    let key = Ast.name_key b2id in
+                    if (i < j) then
+                      MSD.add acc key false
+                    else if i = j then
+                      MSD.add acc key rhs_is_delayed
+                    else
+                      MSD.add acc key true) binds;
+            MSD.freeze acc
+      ) binds in
+    let new_binds = List.map2 (fun b bind_env ->
+        let visitor = new mk_letrec_visitor bind_env in
+        visitor#visit_letrec_bind b) binds bind_envs in
+    let body_env = SD.add (Ast.name_key (bind_name (lrb_bind (PyretUtils.last binds))))
+        true (PyretUtils.last bind_envs) in
+    let body_visitor = new mk_letrec_visitor body_env in
+    let new_body = body_visitor#visit_expr body in
+    A.SLetrec(l,new_binds,new_body)
+
+  method s_id_letrec(l,id,_) =
+    A.SIdLetrec(l,id,SD.find (Ast.name_key id) env)
+
+end
+
+class letrec_visitor = object inherit mk_letrec_visitor SD.empty end
+
+class renamer replacements = object(self)
+  inherit Ast.default_map_visitor
+
+  method s_atom(base,serial) =
+    let a = Ast.SAtom(base,serial) in
+    let k = Ast.name_key a in
+    if SD.mem k replacements then
+      SD.find k replacements
+    else
+      a
+end
+
+let make_renamer = new renamer
+
+let wrap_extra_imports p env =
+  match p with
+  | Ast.SProgram(l,prov,prov_t,prog_imports,expr) ->
+    match env with
+    | CompileStructs.ExtraImports.ExtraImports(imports) ->
+      let full_imports = prog_imports @ (List.map (function
+          | CompileStructs.ExtraImport.ExtraImport(dependency,as_name,values,types) ->
+            let s_name s = Ast.SName(l,s) in
+            match dependency with
+            | CompileStructs.Dependency.Builtin(name) ->
+              Ast.SImportComplete(l, List.map s_name values, List.map s_name types,
+                                  Ast.SConstImport(l,name), s_name as_name, s_name as_name)
+            | CompileStructs.Dependency.Dependency(protocol,args) ->
+              Ast.SImportComplete(l, List.map s_name values, List.map s_name types,
+                                  Ast.SSpecialImport(l,protocol,args), s_name as_name, s_name as_name)) imports) in
+      Ast.SProgram(l,prov,prov_t,full_imports,expr)
+
+let import_to_dep i =
+  let open CompileStructs.Dependency in
+  let open Ast in
+  match i with
+  | SFileImport(_,path) -> Dependency("legacy path", [path])
+  | SConstImport(_,modname) -> Builtin(modname)
+  | SSpecialImport(_,protocol,args) -> Dependency(protocol,args)
+
+let import_to_dep_anf i =
+  let open CompileStructs.Dependency in
+  let open AstAnf in
+  match i with
+  | AImportBuiltin(_,name) -> Builtin(name)
+  | AImportFile(_,name) -> Dependency("legacy-path", [name])
+  | AImportSpecial(_,kind,args) -> Dependency(kind,args)
+
+let some_pred : 'a. ('a -> bool) -> 'a option -> 'a = fun pred -> function
+  | None -> raise (Invalid_argument("Expected some but got none"))
+  | Some(exp) ->
+    if not (pred exp) then
+      failwith ("Predicate failed for Some(exp)")
+    else
+      exp

@@ -150,9 +150,10 @@ end
 (** Takes a function that takes two arguments and returns an Either, and also a base value,
 and folds over the given list from the left as long as the function returns an Either.Left() value,
 and returns either the final value or the Either.Right() value.*)
-let rec fold_while (f : ('a -> 'b -> ('a,'b) Either.t)) (base : 'a) = function
+let rec fold_while : 'a 'b. ('a -> 'b -> ('a,'a) Either.t) -> 'a -> 'b list -> 'a = fun f base lst ->
+  match lst with
   | [] -> base
   | hd :: tl ->
-    match f base hd with
+    match (f base hd) with
     | Either.Left(v) -> fold_while f v tl
     | Either.Right(v) -> v

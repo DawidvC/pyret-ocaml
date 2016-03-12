@@ -1,6 +1,6 @@
 module A = Ast
 module ED = ErrorDisplay
-module SD = Map.Make(String)
+module SD = PyretUtils.StringDict
 module T = TypeStructs
 module U = PyretUtils
 
