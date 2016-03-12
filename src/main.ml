@@ -1,3 +1,7 @@
+module N = AstAnf (* Kludge to make compile for now *)
+module D = Desugar
+module ED = ErrorDisplay
+module LA = ListAux
 let string_ref = ref ""
 let process_argument s =
   if s = "" then raise (Arg.Bad "missing input file name")

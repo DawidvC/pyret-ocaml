@@ -58,7 +58,7 @@ module ExtraImports = struct
 end
 
 module Globals = struct
-  type t = Globals of unit * unit (** FIXME: Needs to be T.Type *)
+  type t = Globals of T.Type.t SD.t * T.Type.t SD.t
 end
 
 module Provides = struct
