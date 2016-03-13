@@ -1,6 +1,7 @@
 module A = Ast
 module ED = ErrorDisplay
 module SD = PyretUtils.StringDict
+module MSD = PyretUtils.MutableStringDict
 module T = TypeStructs
 module U = PyretUtils
 
@@ -45,8 +46,70 @@ module Dependency = struct
     | Builtin(modname) -> "builtin(" ^ modname ^ ")"
 end
 
+module ScopeBinding = struct
+  type t =
+      LetrecBind of Ast.loc * Ast.name * Ast.expr option
+    | LetBind of Ast.loc * Ast.name * Ast.expr option
+    | VarBind of Ast.loc * Ast.name * Ast.expr option
+    | GlobalBind of Ast.loc * Ast.name * Ast.expr option
+    | ModuleBind of Ast.loc * Ast.name * Ast.expr option
+
+  let loc = function
+    | LetrecBind(l,_,_)
+    | LetBind(l,_,_)
+    | VarBind(l,_,_)
+    | GlobalBind(l,_,_)
+    | ModuleBind(l,_,_) -> l
+
+  let atom = function
+    | LetrecBind(_,a,_)
+    | LetBind(_,a,_)
+    | VarBind(_,a,_)
+    | GlobalBind(_,a,_)
+    | ModuleBind(_,a,_) -> a
+
+  let expr = function
+    | LetrecBind(_,_,e)
+    | LetBind(_,_,e)
+    | VarBind(_,_,e)
+    | GlobalBind(_,_,e)
+    | ModuleBind(_,_,e) -> e
+end
+
+module TypeBinding = struct
+  type t =
+      GlobalTypeBind of Ast.loc * Ast.name * Ast.ann option
+    | LetTypeBind of Ast.loc * Ast.name * (Ast.ann, Ast.import) PyretUtils.Either.t option
+    | ModuleTypeBind of Ast.loc * Ast.name * Ast.ann option
+    | TypeVarBind of Ast.loc * Ast.name * Ast.ann option
+
+  let loc = function
+    | GlobalTypeBind(l,_,_)
+    | LetTypeBind(l,_,_)
+    | ModuleTypeBind(l,_,_)
+    | TypeVarBind(l,_,_) -> l
+
+  let atom = function
+    | GlobalTypeBind(_,a,_)
+    | LetTypeBind(_,a,_)
+    | ModuleTypeBind(_,a,_)
+    | TypeVarBind(_,a,_) -> a
+
+  let ann = function
+    | LetTypeBind(_,_,a) -> a
+    | GlobalTypeBind(_,_,a)
+    | ModuleTypeBind(_,_,a)
+    | TypeVarBind(_,_,a) ->
+      let open PyretUtils.Either in
+      match a with
+      | None -> None
+      | Some(a) ->
+        Some(Left(a))
+end
+
+
 module NameResolution = struct
-  type ('a, 'b, 'c) t = Resolved of A.program * CompileError.t list * 'a SD.t * 'b SD.t * 'c SD.t
+  type t = Resolved of A.program * CompileError.t list * ScopeBinding.t MSD.t * TypeBinding.t MSD.t * Ast.expr MSD.t
 end
 
 module ExtraImport = struct

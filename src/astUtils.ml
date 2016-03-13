@@ -74,6 +74,22 @@ class merge_nested_blocks = object(self)
 
 end
 
+class count_apps_class = object(self)
+  inherit Ast.default_iter_visitor
+  val count = ref 0
+  method inc() = count := !count + 1
+  method get() = !count
+
+  method s_app(l,f,args) =
+    self#inc();
+    self#visit_expr f && List.for_all self#visit_expr args
+end
+
+let count_apps expr =
+  let visitor = new count_apps_class in
+  let _ = visitor#visit_expr expr in
+  visitor#get()
+
 let rec bind_exp e env =
   match e with
   | A.SDot(l,o,name) ->
@@ -132,6 +148,104 @@ type ('a, 'c) bind_handlers = { s_letrec_bind : (Ast.letrec_bind -> 'a -> 'a);
                                 s_header : (Ast.import -> 'a -> 'c -> ('a,'c) env_res);
                                 s_type_let_bind : (Ast.type_let_bind -> 'a -> 'c -> ('a, 'c) env_res);
                                 s_param_bind : (Ast.loc -> Ast.name -> 'c -> 'c) }
+
+class ['a,'c] default_env_map_visitor initial_env initial_type_env bind_handlers = object(self)
+  inherit Ast.default_map_visitor
+  val env = initial_env
+  val type_env = initial_type_env
+
+  method s_program(l,_provide,_provide_types,imports,body) =
+    let visit_provide = self#visit_provide _provide in
+    let visit_provide_types = self#visit_provide_types _provide_types in
+    let visit_imports = List.map self#visit_import imports in
+    let new_envs = { val_env = env; type_env = type_env } in
+    let imported_envs = List.fold_left
+        (fun acc i -> bind_handlers.s_header i acc.val_env acc.type_env)
+        new_envs visit_imports in
+    let new_visitor = {< env = imported_envs.val_env; type_env = imported_envs.type_env >} in
+    let visit_body = new_visitor#visit_expr body in
+    Ast.SProgram(l,visit_provide,visit_provide_types,visit_imports,visit_body)
+
+  method s_type_let_expr(l,binds,body) =
+    let new_envs = { val_env = env; type_env = type_env } in
+    let (bound_env, bs) = List.fold_left (fun (envs,bs) b ->
+        let updated = bind_handlers.s_type_let_bind b envs.val_env envs.type_env in
+        let visit_envs = {< env = updated.val_env; type_env = updated.type_env >} in
+        let new_bind = visit_envs#visit_type_let_bind b in
+        (updated, new_bind :: bs)
+      ) (new_envs, []) binds in
+    let new_visitor = {< env = bound_env.val_env; type_env = bound_env.type_env >} in
+    A.STypeLetExpr(l, List.rev bs, new_visitor#visit_expr body)
+
+  method s_let_expr(l,binds,body) =
+    let bound_env, bs = List.fold_left (fun (e,bs) b ->
+        let new_bind = ({< env = e>})#visit_let_bind b in
+        let this_env = bind_handlers.s_let_bind new_bind e in
+        (this_env, new_bind :: bs)
+      ) (env, []) binds in
+    let visit_binds = List.rev bs in
+    let visit_body = ({< env = bound_env >})#visit_expr body in
+    A.SLetExpr(l,visit_binds, visit_body)
+
+  method s_letrec(l,binds,body) =
+    let bind_env = List.fold_left (fun acc b ->
+        bind_handlers.s_letrec_bind b acc) env binds in
+    let new_visitor = {< env = bind_env>} in
+    let visit_binds = List.map new_visitor#visit_letrec_bind binds in
+    let visit_body = new_visitor#visit_expr body in
+    A.SLetrec(l,visit_binds,visit_body)
+
+  method s_lam(l,params,args,ann,doc,body,_check) =
+    let new_type_env = List.fold_left (fun acc param ->
+        bind_handlers.s_param_bind l param acc) type_env params in
+    let with_params = {< type_env = new_type_env >} in
+    let new_args = List.map with_params#visit_bind args in
+    let args_env = List.fold_left (fun acc new_arg ->
+        bind_handlers.s_bind new_arg acc) env args in
+    let with_args = {< type_env = new_type_env; env = args_env >} in
+    let new_body = with_args#visit_expr body in
+    let new_check = with_args#visit_expr_option _check in
+    A.SLam(l, params, new_args, with_args#visit_ann ann, doc, new_body, new_check)
+
+  method s_cases_else(l,typ,value,branches,_else) =
+    A.SCasesElse(l, self#visit_ann typ, self#visit_expr value, List.map self#visit_cases_branch branches,
+                 self#visit_expr _else)
+
+  method s_cases_branch(l,pat_loc,name,args,body) =
+    let new_args = List.map self#visit_cases_bind args in
+    let get_bind = function
+      | A.SCasesBind(_,_,b) -> b in
+    let args_env = List.fold_left (fun acc arg -> bind_handlers.s_bind
+                                      (get_bind arg) acc) env args in
+    A.SCasesBranch(l, pat_loc, name, new_args, {< env = args_env >}#visit_expr body)
+
+  method s_singleton_cases_branch(l,pat_loc,name,body) =
+    A.SSingletonCasesBranch(l,pat_loc,name,body)
+
+  method s_data_expr(l,name,namet,params,mixins,variants,shared_members,_check) =
+    let new_type_env = List.fold_left
+        (fun acc param -> bind_handlers.s_param_bind l param acc)
+        type_env params in
+    let with_params = {< type_env = new_type_env >} in
+    A.SDataExpr(l, name, with_params#visit_name namet, params,
+                List.map with_params#visit_expr mixins,
+                List.map with_params#visit_variant variants,
+                List.map with_params#visit_member shared_members,
+                with_params#visit_expr_option _check)
+
+  method s_method(l,params,args,ann,doc,body,_check) =
+    let new_type_env = List.fold_left (fun acc param ->
+        bind_handlers.s_param_bind l param acc) type_env params in
+    let with_params = {< type_env = new_type_env >} in
+    let new_args = List.map with_params#visit_bind args in
+    let args_env = List.fold_left (fun acc new_arg ->
+        bind_handlers.s_bind new_arg acc) env args in
+    let with_args = {< type_env = new_type_env; env = args_env >} in
+    let new_body = with_args#visit_expr body in
+    let new_check = with_args#visit_expr_option _check in
+    A.SMethod(l, params, new_args, with_args#visit_ann ann, doc, new_body, new_check)
+
+end
 
 class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handlers = object(self)
   inherit Ast.default_iter_visitor
@@ -295,6 +409,12 @@ let binding_handlers = {
         SD.add (Ast.name_key id) (EBind(l,false,BUnknown)) env)
 }
 
+class binding_env_map_visitor initial_env = object(self)
+  inherit [binding SD.t, binding SD.t] default_env_map_visitor
+      (binding_env_from_env initial_env)
+      (binding_type_env_from_env initial_env)
+      binding_handlers
+end
 
 class binding_env_iter_visitor initial_env = object(self)
   inherit [binding SD.t, binding SD.t] default_env_iter_visitor
@@ -303,7 +423,34 @@ class binding_env_iter_visitor initial_env = object(self)
       binding_handlers
 end
 
-class ['a,'c] link_list_visitor initial_env = object(self)
+class link_list_visitor initial_env = object(self)
+  inherit binding_env_map_visitor initial_env
+
+  method s_app(l,f,args) =
+    match f with
+    | Ast.SDot(loc,target,field) when field = "_plus" ->
+      begin
+        match target with
+        | Ast.SApp(l2, lnk, _args) ->
+          begin
+            match bind_or_unknown lnk env with
+            | BPrim("list:link") ->
+              A.SApp(l2, lnk, [List.hd _args; self#visit_expr @@ A.SApp(l, A.SDot(loc, (List.hd @@ List.tl _args), field), args)])
+            | BPrim("list:empty") ->
+              self#visit_expr @@ List.hd args
+            |_ -> A.SApp(l, self#visit_expr f, List.map self#visit_expr args)
+          end
+        | Ast.SId(_,_)
+        | Ast.SDot(_,_,_) ->
+          begin
+            match bind_or_unknown target env with
+            | BPrim("list:empty") ->
+              self#visit_expr @@ List.hd args
+            |_ -> A.SApp(l, self#visit_expr f, List.map self#visit_expr args)
+          end
+        | _ -> A.SApp(l, self#visit_expr f, List.map self#visit_expr args)
+      end
+    | _ -> A.SApp(l, self#visit_expr f, List.map self#visit_expr args)
 end
 
 
@@ -515,3 +662,229 @@ let some_pred : 'a. ('a -> bool) -> 'a option -> 'a = fun pred -> function
       failwith ("Predicate failed for Some(exp)")
     else
       exp
+
+let get_named_provides (resolved : CompileStructs.NameResolution.t) (uri : uri)
+    (compile_env : CompileStructs.CompileEnvironment.t) : CompileStructs.Provides.t =
+  let open CompileStructs in
+  let open NameResolution in
+  let open CompileEnvironment in
+  let open Provides in
+  let open TypeStructs in
+  let open PyretUtils in
+
+  let rec field_to_typ (f : Ast.a_field) : TypeMember.t =
+    match f with
+    | Ast.AField(loc,name,ann) ->
+      TypeMember.TMember(name, ann_to_typ ann, loc)
+
+  and collect_shared_fields (vs : Ast.variant list) =
+    let init_members = MSD.create 30 in
+    let get_with_members = (function
+        | Ast.SVariant(_,_,_,_,wm)
+        | Ast.SSingletonVariant(_,_,wm) -> wm) in
+    let member_name = (function
+        | Ast.SDataField(_,name,_)
+        | Ast.SMutableField(_,name,_,_)
+        | Ast.SMethodField(_,name,_,_,_,_,_,_) -> name) in
+    List.iter (fun m -> MSD.add init_members (member_name m) (member_to_t_member m))
+      (get_with_members (List.hd vs));
+
+    let shared_across_variants = init_members in
+
+    List.iter (fun v ->
+        List.iter (fun m ->
+            let mname = member_name m in
+            if MSD.mem shared_across_variants mname then
+              begin
+                let existing_mem = MSD.find shared_across_variants mname in
+                let this_mem = member_to_t_member m in
+                if not (existing_mem = this_mem) then
+                  MSD.remove shared_across_variants mname
+                else ()
+              end
+            else ()) (get_with_members v)) (List.tl vs);
+
+    List.map snd (MSD.bindings shared_across_variants)
+      
+  and v_member_to_t_member = function
+    | Ast.SVariantMember(l,kind,bind) ->
+      let (bind_id, bind_ann) = match bind with
+        | Ast.SBind(_,_,id,ann) -> id, ann in
+      let typ = match kind with
+        | Ast.SMutable -> Type.TRef(ann_to_typ bind_ann, l)
+        | Ast.SNormal -> ann_to_typ bind_ann in
+      TypeMember.TMember(Ast.name_toname bind_id, typ, l)
+
+  and member_to_t_member = function
+    | Ast.SDataField(l,name,value) ->
+      TypeMember.TMember(name, Type.TTop(l), l)
+    | Ast.SMutableField(l,name,ann,value) ->
+      TypeMember.TMember(name, Type.TRef(ann_to_typ ann, l), l)
+    | Ast.SMethodField(l,name,params,args,ann,_,_,_) ->
+      let bind_ann = function
+        | Ast.SBind(_,_,_,ann) -> ann in
+      let arrow_part =
+        Type.TArrow(List.map ann_to_typ (List.map bind_ann args), ann_to_typ ann, l) in
+      let typ = match params with
+        | [] -> arrow_part
+        | _ -> let tvars = List.map (fun p -> Type.TVar(p, l)) params in
+          Type.TForall(tvars, arrow_part, l) in
+      TypeMember.TMember(name,typ,l)
+
+  and ann_to_typ : Ast.ann -> Type.t = function
+    | Ast.ABlank
+    | Ast.AAny -> Type.TTop(Ast.dummy_loc)
+    | Ast.AName(l,id) -> Type.TName(Some(uri), id, l)
+    | Ast.ATypeVar(l,id) -> Type.TVar(id,l)
+    | Ast.AArrow(l,args,ret,use_parens) -> Type.TArrow(List.map ann_to_typ args, ann_to_typ ret, l)
+    | Ast.AMethod(l,args,ret) -> failwith "Cannot provide a raw method"
+    | Ast.ARecord(l,fields) -> Type.TRecord(List.map field_to_typ fields, l)
+    | Ast.AApp(l,ann,args) -> Type.TApp(ann_to_typ ann, List.map ann_to_typ args, l)
+    | Ast.APred(l,ann,exp) ->
+      (* TODO: give more info than this to the type checker? only needed dynamically, right? *)
+      ann_to_typ ann
+    | Ast.ADot(l,obj,field) ->
+      let type_bindings = match resolved with
+        | Resolved(_,_,_,tb,_) -> tb in
+      (match MSD.lookup type_bindings (Ast.name_key obj) with
+      | None -> Type.TTop(l)
+      | Some(b) ->
+        let b_ann = (TypeBinding.ann b) in
+        let exp = some_pred (function
+            | Either.Left(_) -> false
+            | Either.Right(i) ->
+              match i with
+              | Ast.SImportComplete(_,_,_,_,_,_) -> true
+              | _ -> false) b_ann in
+        let exp = match exp with
+          | Either.Left(_) -> failwith "Internal error: Predicate failed to distinguish Either.Right"
+          | Either.Right(e) -> e in
+        let exp_import_type = match exp with
+          | Ast.SImportComplete(_,_,_,it,_,_) -> it
+          | _ -> failwith "Internal error: Predicate failed to distinguish s-import-complete" in
+        let dep = import_to_dep exp_import_type in
+        let compile_env_mods = match compile_env with
+          | CompileEnvironment(_,m) -> m in
+        let provided_from_other = SD.find (Dependency.key dep) compile_env_mods in
+        let pfo_uri = match provided_from_other with
+          | Provides.Provides(u,_,_,_) -> u in
+        Type.TName(Some(pfo_uri), Ast.SName(l,field), l))
+      | Ast.AChecked(_,_) -> failwith "a-checked should only be generated by the type checker"
+
+  and data_expr_to_datatype : Ast.expr -> Type.t = function
+    | Ast.SDataExpr(l,name,_,params,_,variants,shared_members,_) ->
+      let tvars = List.map (fun tvar -> Type.TVar(tvar,l)) params in
+      let tvariants = List.map (function
+          | Ast.SVariant(l2,constr_loc,vname,members,with_members) ->
+            TypeVariant.TVariant(vname,List.map v_member_to_t_member members,
+                                 List.map member_to_t_member with_members, l2)
+          | Ast.SSingletonVariant(l2,vname,with_members) ->
+            TypeVariant.TSingletonVariant(vname, List.map member_to_t_member with_members, l2)) variants in
+      let shared_across_variants = collect_shared_fields variants in
+      let all_shared_fields = (List.map member_to_t_member shared_members) @ shared_across_variants in
+
+      Type.TData(tvars, tvariants, all_shared_fields, l)
+    | _ -> failwith "Non-data-expr given to data_expr_to_datatype" in
+
+  match resolved with
+  | NameResolution.Resolved(ast,errors,_,type_bindings,datatypes) ->
+    match ast with
+    | Ast.SProgram(l,provide_complete,_,_,_) ->
+      match provide_complete with
+      | Ast.SProvideComplete(_,values,aliases,datas) ->
+        let val_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PValue(_,v,ann) ->
+              MSD.add val_typs (Ast.name_toname v) (ann_to_typ ann)) values;
+        let alias_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PAlias(loc,in_name,out_name,m) ->
+              let target_binding = MSD.find type_bindings (Ast.name_key in_name) in
+              let typ = match (TypeBinding.ann target_binding) with
+                | None -> Type.TTop(l)
+                | Some(target_ann) ->
+                  match target_ann with
+                  | Either.Left(ann) -> ann_to_typ ann
+                  | Either.Right(_) -> Type.TTop(l) in
+              MSD.add alias_typs (Ast.name_toname out_name) typ) aliases;
+        let data_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PData(loc,name,it) ->
+              let exp = MSD.find datatypes (Ast.name_key name) in
+              MSD.add data_typs (Ast.name_key name) (data_expr_to_datatype exp)) datas;
+        Provides.Provides(uri, MSD.freeze val_typs, MSD.freeze alias_typs, MSD.freeze data_typs)
+      | _ -> failwith "Incomplete provide given to get_named_provides"
+
+let rec canonicalize_members (ms : TypeStructs.TypeMember.t list) (uri : uri) : TypeStructs.TypeMember.t list =
+  let open TypeStructs.TypeMember in
+  List.map (function
+      | TMember(field_name,typ,loc) ->
+        TMember(field_name, canonicalize_names typ uri, loc)) ms
+
+and canonicalize_variant (v : TypeStructs.TypeVariant.t) (uri : uri) : TypeStructs.TypeVariant.t =
+  let open TypeStructs.TypeVariant in
+  let c m = canonicalize_members m uri in
+  match v with
+  | TVariant(name,fields,with_fields,l) ->
+    TVariant(name, c fields, c with_fields, l)
+  | TSingletonVariant(name, with_fields, l) ->
+    TSingletonVariant(name, c with_fields, l)
+
+and canonicalize_names (typ : TypeStructs.Type.t) (uri : uri) : TypeStructs.Type.t =
+  let open TypeStructs.Type in
+  let c n = canonicalize_names n uri in
+  let cv v = canonicalize_variant v uri in
+  let cm m = canonicalize_members m uri in
+  match typ with
+  | TName(module_name, id, l) ->
+    (match module_name with
+     | None -> TName(Some(uri), id, l)
+     | Some(_) -> typ)
+  | TVar(_,_) -> typ
+  | TArrow(args,ret,l) -> TArrow(List.map c args, c ret, l)
+  | TApp(onto,args,l) -> TApp(c onto, List.map c args, l)
+  | TTop(l) -> TTop(l)
+  | TBot(l) -> TBot(l)
+  | TRecord(fields, l) -> TRecord(cm fields, l)
+  | TForall(introduces,onto,l) -> TForall(List.map c introduces, c onto, l)
+  | TRef(t, l) -> TRef(c t, l)
+  | TExistential(_,_) -> typ
+  | TData(params,variants,fields,l) ->
+    TData(List.map c params, List.map cv variants, cm fields, l)
+
+let get_typed_provides (typed : TypeCheckStructs.typed) (uri : uri)
+    (compile_env : CompileStructs.CompileEnvironment.t) =
+  let open TypeCheckStructs in
+  let c m = canonicalize_names m uri in
+  match typed with
+  | Typed(ast,info) ->
+    match ast with
+    | Ast.SProgram(_,provide_complete,_,_,_) ->
+      match provide_complete with
+      | Ast.SProvideComplete(_,values,aliases,datas) ->
+        let val_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PValue(loc,name,ann) ->
+              let name = Ast.name_toname name
+              and key = Ast.name_key name in
+              MSD.add val_typs name (c (MSD.find info.TCInfo.typs key))) values;
+        let alias_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PAlias(loc,in_name,out_name,m) ->
+              let in_name = Ast.name_key in_name in
+              let out_name = Ast.name_toname out_name in
+              match MSD.lookup info.TCInfo.data_exprs in_name with
+              | Some(typ) -> MSD.add alias_typs out_name (c typ)
+              | None ->
+                let typ = MSD.find info.TCInfo.aliases in_name in
+                MSD.add alias_typs out_name (c typ)) aliases;
+        let data_typs = MSD.create 30 in
+        List.iter (function
+            | Ast.PData(loc,name,it) ->
+              let name = Ast.name_toname name
+              and key = Ast.name_key name in
+              MSD.add data_typs name (c (MSD.find info.TCInfo.data_exprs key))) datas;
+        let (val_typs, alias_typs, data_typs) =
+          MSD.freeze val_typs, MSD.freeze alias_typs, MSD.freeze data_typs in
+        CompileStructs.Provides.Provides(uri,val_typs,alias_typs,data_typs)
+      | _ -> failwith "Incompelete provide in get_typed_provides"

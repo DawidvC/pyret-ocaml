@@ -886,11 +886,11 @@ class default_map_visitor = object(self)
            ann,
            a_field] ast_visitor_base
 
-  method private visit_expr_option = function
+  method visit_expr_option = function
     | None -> None
     | Some(v) -> Some(self#visit_expr v)
 
-  method private visit_ann_option = function
+  method visit_ann_option = function
     | None -> None
     | Some(v) -> Some(self#visit_ann v)
 
