@@ -1,9 +1,10 @@
 module A = Ast
-module SD = Map.Make(String)
-module C = CompileStructs
+module SD = PyretUtils.StringDict
 module U = AstUtils
 module G = Gensym
 module T = TypeStructs
+
+open CompileStructs
 
 let mk_bind l id = A.SBind(l,false,id,A.ABlank)
 
@@ -31,7 +32,7 @@ let resolve_type_provide (p : A.provide_types) (b : A.expr) =
     A.SProvideTypes(l, type_fields)
   | _ -> p
 
-let expand_import (imp : A.import) (env : C.CompileEnvironment.t) : A.import =
+let expand_import (imp : A.import) (env : CompileEnvironment.t) : A.import =
   match imp with
   | A.SImport(l,imp,name) ->
     A.SImportComplete(l,[],[],imp,name,name)
@@ -39,19 +40,19 @@ let expand_import (imp : A.import) (env : C.CompileEnvironment.t) : A.import =
     A.SImportComplete(l,fields,[],imp,A.SUnderscore(l),A.SUnderscore(l))
   | A.SInclude(l,imp) ->
     let imp_name = A.SUnderscore(l) in
-    let info_key = U.key (U.import_to_dep imp) in
+    let info_key = Dependency.key (U.import_to_dep imp) in
     let safe_find sd key =
       try
         Some(SD.find sd key)
       with
       | Invalid_argument(_) -> None in
     let mod_info =
-      safe_find info_key (match env with | C.CompileEnvironment.CompileEnvironment(_,e) -> e) in
+      safe_find info_key (match env with | CompileEnvironment.CompileEnvironment(_,e) -> e) in
     (match mod_info with
     | None -> failwith ("No compile-time information provided for module "^info_key)
     | Some(provides) ->
       match provides with
-      | C.Provides.Provides(_,values,aliases,_) ->
+      | Provides.Provides(_,values,aliases,_) ->
         let val_names = List.map (fun n -> A.SName(l,fst n)) (SD.bindings values) in
         let type_names = List.map (fun n -> A.SName(l, fst n)) (SD.bindings aliases) in
         A.SImportComplete(l,val_names,type_names,imp,imp_name,imp_name))
