@@ -73,13 +73,14 @@ end
 module ScopeBinding :
 sig
   type t =
-      LetrecBind of Ast.loc * Ast.name * Ast.expr option
-    | LetBind of Ast.loc * Ast.name * Ast.expr option
-    | VarBind of Ast.loc * Ast.name * Ast.expr option
-    | GlobalBind of Ast.loc * Ast.name * Ast.expr option
-    | ModuleBind of Ast.loc * Ast.name * Ast.expr option
+      LetrecBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | LetBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | VarBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | GlobalBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | ModuleBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
   val loc : t -> Ast.loc
   val atom : t -> Ast.name
+  val ann : t -> Ast.ann
   val expr : t -> Ast.expr option
 end
 
