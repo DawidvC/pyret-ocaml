@@ -112,7 +112,8 @@ module ExtraImports : sig type t = ExtraImports of ExtraImport.t list end
 
 module Globals :
 sig
-  type t = Globals of TypeStructs.Type.t PyretUtils.StringDict.t * TypeStructs.Type.t PyretUtils.StringDict.t
+  type t = Globals of TypeStructs.Type.t PyretUtils.StringDict.t *
+                      TypeStructs.Type.t PyretUtils.StringDict.t (** values, types *)
 end
 
 module Provides :
