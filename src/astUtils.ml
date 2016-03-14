@@ -261,7 +261,7 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
         let imported_envs = List.fold_left (fun acc i ->
             bind_handlers.s_header i acc.val_env acc.type_env) new_envs imports in
         let new_visitor =
-          new default_env_iter_visitor imported_envs.val_env imported_envs.type_env bind_handlers in
+          {< env = imported_envs.val_env; type_env = imported_envs.type_env >} in
         List.for_all new_visitor#visit_import imports && new_visitor#visit_expr body
       end
     else
@@ -272,7 +272,7 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
     let fold_fun (acc,bs) = fun b ->
       let updated = bind_handlers.s_type_let_bind b acc.val_env acc.type_env in
       let visit_envs =
-        new default_env_iter_visitor updated.val_env updated.type_env bind_handlers in
+        {< env = updated.val_env; type_env = updated.type_env >} in
       let new_bind = visit_envs#visit_type_let_bind b in
       if new_bind then
         PyretUtils.Either.Left(updated, true)
@@ -280,24 +280,24 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
         PyretUtils.Either.Right(updated, false) in
     let (bound_env, bs) = PyretUtils.fold_while fold_fun (new_envs, true) binds in
     let new_visitor =
-      new default_env_iter_visitor bound_env.val_env bound_env.type_env bind_handlers in
+      {< env = bound_env.val_env; type_env = bound_env.type_env >} in
     bs && new_visitor#visit_expr body
 
   method s_let_expr(l,binds,body) =
     let (bound_env,bs) = PyretUtils.fold_while (fun (e, bs) b ->
         let this_env = bind_handlers.s_let_bind b e in
-        let visitor = new default_env_iter_visitor e type_env bind_handlers in
+        let visitor = {< env = e; type_env = type_env >} in
         let new_bind = visitor#visit_let_bind b in
         if new_bind then
           PyretUtils.Either.Left(this_env,true)
         else
           PyretUtils.Either.Right(this_env,false)) (env,true) binds in
-    let new_visitor = new default_env_iter_visitor bound_env type_env bind_handlers in
+    let new_visitor = {< env = bound_env; type_env = type_env >} in
     bs && new_visitor#visit_expr body
 
   method s_letrec(l,binds,body) =
     let bind_env = List.fold_left (fun acc b -> bind_handlers.s_letrec_bind b acc) env binds in
-    let new_visitor = new default_env_iter_visitor bind_env type_env bind_handlers in
+    let new_visitor = {< env = bind_env; type_env = type_env >} in
     let continue_binds = PyretUtils.fold_while (fun acc b ->
         if new_visitor#visit_letrec_bind b then
           PyretUtils.Either.Left(true)
@@ -308,11 +308,11 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
   method s_lam(l,params,args,ann,doc,body,_check) =
     let new_type_env = List.fold_left
         (fun acc param -> bind_handlers.s_param_bind l param acc) type_env params in
-    let with_params = new default_env_iter_visitor env new_type_env bind_handlers in
+    let with_params = {< env = env; type_env = new_type_env >} in
     let visit_args = List.for_all with_params#visit_bind args in
     let with_params_env = (with_params#get_env()).val_env in
     let args_env = List.fold_left (fun acc arg -> bind_handlers.s_bind arg acc) with_params_env args in
-    let with_args = new default_env_iter_visitor args_env new_type_env bind_handlers in
+    let with_args = {< env = args_env; type_env = new_type_env >} in
     visit_args
     && with_args#visit_ann ann
     && with_args#visit_expr body
@@ -331,7 +331,7 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
         env
         (List.map (function
              | Ast.SCasesBind(_,_,b) -> b) args) in
-    let new_visitor = new default_env_iter_visitor args_env type_env bind_handlers in
+    let new_visitor = {< env = args_env; type_env = type_env >} in
     visit_args
     && new_visitor#visit_expr body
 
@@ -339,7 +339,7 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
     let new_type_env = List.fold_left
         (fun acc param -> bind_handlers.s_param_bind l param acc)
         type_env params in
-    let with_params = new default_env_iter_visitor env new_type_env bind_handlers in
+    let with_params = {< env = env; type_env = new_type_env >} in
     with_params#visit_name namet
     && List.for_all with_params#visit_expr mixins
     && List.for_all with_params#visit_variant variants
@@ -349,10 +349,10 @@ class ['a,'c] default_env_iter_visitor initial_env initial_type_env bind_handler
   method s_method(l,params,args,ann,doc,body,_check) =
     let new_type_env = List.fold_left
         (fun acc param -> bind_handlers.s_param_bind l param acc) type_env params in
-    let with_params = new default_env_iter_visitor env new_type_env bind_handlers in
+    let with_params = {< env = env; type_env = new_type_env >} in
     let args_env = List.fold_left
         (fun acc arg -> bind_handlers.s_bind arg acc) env args in
-    let new_visitor = new default_env_iter_visitor args_env new_type_env bind_handlers in
+    let new_visitor = {< env = args_env; type_env = new_type_env >} in
     List.for_all with_params#visit_bind args
     && new_visitor#visit_ann ann
     && new_visitor#visit_expr body
