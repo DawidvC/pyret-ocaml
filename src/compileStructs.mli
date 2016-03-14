@@ -89,7 +89,7 @@ sig
       GlobalTypeBind of Ast.loc * Ast.name * Ast.ann option
     | LetTypeBind of Ast.loc * Ast.name *
                      (Ast.ann, Ast.import) PyretUtils.Either.t option
-    | ModuleTypeBind of Ast.loc * Ast.name * Ast.ann option
+    | ModuleTypeBind of Ast.loc * Ast.name * Ast.import_type * Ast.ann option
     | TypeVarBind of Ast.loc * Ast.name * Ast.ann option
   val loc : t -> Ast.loc
   val atom : t -> Ast.name

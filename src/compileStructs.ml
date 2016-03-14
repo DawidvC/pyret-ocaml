@@ -80,25 +80,25 @@ module TypeBinding = struct
   type t =
       GlobalTypeBind of Ast.loc * Ast.name * Ast.ann option
     | LetTypeBind of Ast.loc * Ast.name * (Ast.ann, Ast.import) PyretUtils.Either.t option
-    | ModuleTypeBind of Ast.loc * Ast.name * Ast.ann option
+    | ModuleTypeBind of Ast.loc * Ast.name * Ast.import_type * Ast.ann option
     | TypeVarBind of Ast.loc * Ast.name * Ast.ann option
 
   let loc = function
     | GlobalTypeBind(l,_,_)
     | LetTypeBind(l,_,_)
-    | ModuleTypeBind(l,_,_)
+    | ModuleTypeBind(l,_,_,_)
     | TypeVarBind(l,_,_) -> l
 
   let atom = function
     | GlobalTypeBind(_,a,_)
     | LetTypeBind(_,a,_)
-    | ModuleTypeBind(_,a,_)
+    | ModuleTypeBind(_,a,_,_)
     | TypeVarBind(_,a,_) -> a
 
   let ann = function
     | LetTypeBind(_,_,a) -> a
     | GlobalTypeBind(_,_,a)
-    | ModuleTypeBind(_,_,a)
+    | ModuleTypeBind(_,_,_,a)
     | TypeVarBind(_,_,a) ->
       let open PyretUtils.Either in
       match a with

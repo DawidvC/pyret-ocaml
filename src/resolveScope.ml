@@ -5,6 +5,7 @@ module G = Gensym
 module T = TypeStructs
 
 open CompileStructs
+open PyretUtils
 
 type binding_group =
   | LetBinds of Ast.let_bind list
@@ -178,6 +179,63 @@ and desugar_scope_block stmts binding_group =
           | _ -> [f; rest_stmt] in
         bind_wrap binding_group (Ast.SBlock(Ast.expr_loc f, rest_stmts))
 
+class desugar_scope_visitor = object(self)
+  inherit Ast.default_map_visitor
+
+  method s_block(l, stmts) =
+    desugar_scope_block (List.map self#visit_expr stmts) (LetBinds [])
+end
+
+(** Remove x = e, var x = e, and fun f(): e end
+and turn them into explicit let and letrec expressions.
+Do this recursively through the whole program.
+Preconditions on prog:
+  - well-formed
+Postconditions on prog:
+  - contains no SProvide in headers
+  - contains no SLet, SVar, SData *)
+let desugar_scope prog env =
+  match prog with
+  | Ast.SProgram(l, _provide_raw, provide_types_raw, imports_raw, body) ->
+    let imports = List.map (fun i -> expand_import i env) imports_raw in
+    let prov = match resolve_provide _provide_raw body with
+      | Ast.SProvideNone(_) -> Ast.SObj(l, [])
+      | Ast.SProvide(_, block) -> block
+      | _ -> failwith "Should have been resolved away" in
+    let provides = resolve_type_provide provide_types_raw body in
+    let provt = match provides with
+      | Ast.SProvideTypesNone(_) -> []
+      | Ast.SProvideTypes(_, anns) -> anns
+      | _ -> failwith ("Should have been resolve-typed away"
+                       ^ (Sexplib.Sexp.to_string_hum (Ast.sexp_of_provide_types provides))) in
+    (* TODO: Need to resolve provide-types here *)
+    let with_imports = match body with
+      | Ast.SBlock(l2, stmts) -> Ast.SBlock(l2, desugar_toplevel_types stmts)
+      | _ -> Ast.SBlock(l, desugar_toplevel_types [body]) in
+    let transform_toplevel_last l2 last =
+      let app = Ast.SApp(l2, Ast.SDot(l2, AstUtils.checkers l2, "results"), []) in
+      Ast.SModule(l2, last, [], [], prov, provt, app) in
+    let with_provides = match with_imports with
+      | Ast.SBlock(l2, stmts) ->
+        let last = PyretUtils.last stmts in
+        (match last with
+         | Ast.STypeLetExpr(l3, binds, block2) ->
+           (match block2 with
+            | Ast.SBlock(b2loc, b2stmts) ->
+              let inner_last = PyretUtils.last b2stmts in
+              let inner_block_body = (PyretUtils.drop 1 b2stmts)
+                                     @ [transform_toplevel_last l3 inner_last] in
+              let inner_block = Ast.SBlock(b2loc, inner_block_body) in
+              let stle = Ast.STypeLetExpr(l3, binds, inner_block) in
+              let block_body = (PyretUtils.drop 1 stmts) @ [stle] in
+              Ast.SBlock(l2, block_body)
+            | _ -> failwith "Non-SBlock in STypeLetExpr body")
+         | _ -> Ast.SBlock(l2, (PyretUtils.drop 1 stmts) @ [transform_toplevel_last l2 last]))
+      | _ -> failwith "Impossible" in
+    Ast.SProgram(l, Ast.SProvideNone(l), Ast.SProvideTypesNone(l), imports,
+                 (new desugar_scope_visitor)#visit_expr with_provides)
+
+
 let scope_env_from_env = function
   | CompileEnvironment.CompileEnvironment(Globals.Globals(values,_),_) ->
     List.fold_left (fun acc name ->
@@ -190,3 +248,64 @@ let type_env_from_env = function
         SD.add name (TypeBinding.GlobalTypeBind(
             Ast.Srcloc.Builtin("pyret-builtin"), Ast.STypeGlobal(name), None)) acc)
       SD.empty (List.map fst (SD.bindings types))
+
+type bind_pair = { atom : Ast.name; env : CompileEnvironment.t }
+class resolve_names_class initial_env =
+  object(self)
+    inherit Ast.default_map_visitor
+
+    val name_errors = ref []
+    val bindings : ScopeBinding.t MutableStringDict.t = MutableStringDict.create 50
+    val type_bindings : TypeBinding.t MutableStringDict.t = MutableStringDict.create 50
+    val datatypes : Ast.expr MutableStringDict.t = MutableStringDict.create 50
+
+    method make_anon_import_for s env (bindings : ScopeBinding.t MutableStringDict.t) b =
+      let atom = Ast.global_names s in
+      MutableStringDict.add bindings (Ast.name_key atom) (b atom);
+      { atom = atom; env = env }
+
+    method make_atom_for name is_shadowing env (bindings : ScopeBinding.t MutableStringDict.t) make_binding =
+      match name with
+      | Ast.SName(l, s) ->
+        (if SD.mem s env && not is_shadowing then
+           begin
+             let old_loc = ScopeBinding.loc (SD.find s env) in
+             name_errors := (CompileError.ShadowId(s, l, old_loc)) :: !name_errors
+           end);
+        let atom = Ast.global_names s in
+        let binding = make_binding l atom in
+        MutableStringDict.add bindings (Ast.name_key atom) binding;
+        { atom = atom; env = env }
+      | Ast.SUnderscore(l) ->
+        let atom = Ast.global_names "$underscore" in
+        MutableStringDict.add bindings (Ast.name_key atom) (make_binding l atom);
+        { atom = atom; env = env }
+      | Ast.SAtom(_,_) ->
+        let binding = make_binding Ast.dummy_loc name in
+        (* TODO: This is probably what it should be, but that's only true if there's a bug in Pyret *)
+        let env = SD.add (Ast.name_key name) binding env in
+        MutableStringDict.add bindings (Ast.name_key name) binding;
+        { atom = atom; env = env }
+      | _ -> failwith ("Unexpected atom type: " ^ (Ast.name_tosourcestring atom))
+
+    method update_type_binding_ann atom ann =
+      let key = Ast.name_key atom in
+      if MutableStringDict.mem type_bindings key then
+        begin
+          let set_to = MutableStringDict.add type_bindings key in
+          match MutableStringDict.find type_bindings key with
+          | TypeBinding.LetTypeBind(l, _, _) ->
+            let ann = match ann with
+              | Some(ann) -> Some(Either.Left(ann))
+              | None -> None in
+            set_to @@ TypeBinding.LetTypeBind(l, atom, ann)
+          | TypeBinding.ModuleTypeBind(l, _, imp, _) ->
+            set_to @@ TypeBinding.ModuleTypeBind(l, atom, imp, ann)
+          | TypeBinding.GlobalTypeBind(l, _, _) ->
+            set_to @@ TypeBinding.GlobalTypeBind(l, atom, ann)
+          | TypeBinding.TypeVarBind(l, _, _) ->
+            set_to @@ TypeBinding.TypeVarBind(l, atom, ann)
+        end
+      else
+        Printf.printf "No binding for %s\n" @@ Ast.name_tosourcestring atom
+end

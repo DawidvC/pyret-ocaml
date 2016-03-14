@@ -16,6 +16,24 @@ let last : 'a. 'a list -> 'a = function
   | [] -> failwith "Cannot take the last of an empty list"
   | (hd :: tl) -> (List.fold_left (fun _ x -> x) hd tl)
 
+(** Returns the first n items of the given list, throwing `Invalid_argument' if
+n is greater than the length of the list. *)
+let take : 'a. int -> 'a list -> 'a list = fun length ->
+  assert (length >= 0);
+  let rec take_help acc length = function
+    | _ when length = 0 -> List.rev acc
+    | [] ->
+        raise (Invalid_argument("List is " ^ (string_of_int length) ^ " items too short."))
+    | hd :: tl ->
+      take_help (hd :: acc) (length - 1) tl in
+  take_help [] length
+
+(** Drops the last n items of the given list, throwing `Invalid_argument' if
+n is greater than the length of the list. *)
+let drop : 'a. int -> 'a list -> 'a list = fun length lst ->
+  assert (length >= 0);
+  take ((List.length lst) - length) lst
+
 (** Returns an option type matching the first item in the list satisfying `pred', if found. *)
 let list_find : 'a. ('a -> bool) -> 'a list -> 'a option = fun pred list ->
   try
