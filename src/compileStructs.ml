@@ -51,36 +51,38 @@ module ScopeBinding = struct
       LetrecBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
     | LetBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
     | VarBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
-    | GlobalBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
-    | ModuleBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | GlobalBind of Ast.loc * Ast.name * Ast.expr option
+    | ModuleBind of Ast.loc * Ast.name * Ast.import_type * (Ast.expr, Ast.import) PyretUtils.Either.t option
 
   let loc = function
     | LetrecBind(l,_,_,_)
     | LetBind(l,_,_,_)
     | VarBind(l,_,_,_)
-    | GlobalBind(l,_,_,_)
+    | GlobalBind(l,_,_)
     | ModuleBind(l,_,_,_) -> l
 
   let atom = function
     | LetrecBind(_,a,_,_)
     | LetBind(_,a,_,_)
     | VarBind(_,a,_,_)
-    | GlobalBind(_,a,_,_)
+    | GlobalBind(_,a,_)
     | ModuleBind(_,a,_,_) -> a
 
   let ann = function
     | LetrecBind(_,_,a,_)
     | LetBind(_,_,a,_)
-    | VarBind(_,_,a,_)
-    | GlobalBind(_,_,a,_)
-    | ModuleBind(_,_,a,_) -> a
-      
+    | VarBind(_,_,a,_) -> a
+    | ModuleBind(_,_,_,_)
+    | GlobalBind(_,_,_) -> failwith "No annotation on GlobalBinds."
+
   let expr = function
     | LetrecBind(_,_,_,e)
     | LetBind(_,_,_,e)
     | VarBind(_,_,_,e)
-    | GlobalBind(_,_,_,e)
-    | ModuleBind(_,_,_,e) -> e
+    | GlobalBind(_,_,e) -> e
+    | ModuleBind(_,_,_,Some(PyretUtils.Either.Left(e))) -> Some(e)
+    | ModuleBind(_,_,_,None) -> None
+    | ModuleBind(_,_,_,_) -> failwith "Non-expr on ModuleBind."
 end
 
 module TypeBinding = struct
