@@ -218,5 +218,204 @@ let runtime_builtins =
           "check-raises-violates", t_bot;
         ];
       ];
-      "not", t_arrow [t_boolean] t_boolean
+      "not", t_arrow [t_boolean] t_boolean;
+      "is-nothing", t_pred;
+      "is-number", t_pred;
+      "is-string", t_pred;
+      "is-boolean", t_pred;
+      "is-object", t_pred;
+      "is-function", t_pred;
+      "is-raw-array", t_pred;
+      "gensym", t_top;
+      "random", t_top;
+      "run-task", t_top;
+      "_plus", t_top;
+      "_minus", t_top;
+      "_times", t_top;
+      "_divide", t_top;
+      "_lessthan", t_top;
+      "_lessequal", t_top;
+      "_greaterthan", t_top;
+      "_greaterequal", t_top;
+      "string-equal", t_top;
+      "string-contains", t_top;
+      "string-append", t_top;
+      "string-length", t_top;
+      "string-tonumber", t_top;
+      "string-to-number", t_arrow [t_string] @@ t_option t_number;
+      "string-repeat", t_top;
+      "string-substring", t_top;
+      "string-replace", t_top;
+      "string-split", t_top;
+      "string-split-all", t_top;
+      "string-char-at", t_top;
+      "string-toupper", t_top;
+      "string-tolower", t_top;
+      "string-explode", t_top;
+      "string-index-of", t_top;
+      "string-to-code-point", t_top;
+      "string-from-code-point", t_top;
+      "string-to-code-points", t_top;
+      "string-from-code-points", t_top;
+      "time-now", t_number_unop;
+      "num-random", t_number_unop;
+      "num-random-seed", t_arrow [t_number] t_nothing;
+      "num-max", t_number_binop;
+      "num-min", t_number_binop;
+      "num-equal", t_arrow [t_number; t_number] t_boolean;
+      "num-round", t_number_unop;
+      "num-round-even", t_number_unop;
+      "num-abs", t_number_unop;
+      "num-sin", t_number_unop;
+      "num-cos", t_number_unop;
+      "num-tan", t_number_unop;
+      "num-asin", t_number_unop;
+      "num-acos", t_number_unop;
+      "num-atan", t_number_unop;
+      "num-modulo", t_number_binop;
+      "num-truncate", t_number_unop;
+      "num-sqrt", t_number_unop;
+      "num-sqr", t_number_unop;
+      "num-ceiling", t_number_unop;
+      "num-floor", t_number_unop;
+      "num-log", t_number_unop;
+      "num-exp", t_number_unop;
+      "num-exact", t_number_unop;
+      "num-to-rational", t_number_unop;
+      "num-to-roughnum", t_number_unop;
+      "num-is-positive", t_number_pred1;
+      "num-is-negative", t_number_pred1;
+      "num-is-non-positive", t_number_pred1;
+      "num-is-non-negative", t_number_pred1;
+      "num-is-integer", t_number_pred1;
+      "num-is-fixnum", t_number_pred1;
+      "num-is-rational", t_number_pred1;
+      "num-is-roughnum", t_number_pred1;
+      "num-expt", t_number_binop;
+      "num-tostring", t_arrow [t_number] t_string;
+      "num-to-string", t_arrow [t_number] t_string;
+      "num-to-string-digits", t_arrow [t_number; t_number] t_string;
+      "num-within", t_within_num;
+      "num-within-rel", t_within_num;
+      "num-within-abs", t_within_num;
+      "within-rel", t_within_any;
+      "within-rel-now", t_within_any;
+      "within-abs", t_within_any;
+      "within-abs-now", t_within_any;
+      "within", t_within_any;
+      "raw-array-get", t_top;
+      "raw-array-set", t_top;
+      "raw-array-of", t_top;
+      "raw-array-length", t_top;
+      "raw-array-to-list", t_top;
+      "raw-array-fold", t_top;
+      "raw-array", t_record [
+        "make" , t_forall1 (fun a -> t_arrow [t_array a] @@ t_array a);
+        "make0", t_forall1 (fun a -> t_arrow [] @@ t_array a);
+        "make1", t_forall1 (fun a -> t_arrow [a] @@ t_array a);
+        "make2", t_forall1 (fun a -> t_arrow [a; a] @@ t_array a);
+        "make3", t_forall1 (fun a -> t_arrow [a; a; a] @@ t_array a);
+        "make4", t_forall1 (fun a -> t_arrow [a; a; a; a] @@ t_array a);
+        "make5", t_forall1 (fun a -> t_arrow [a; a; a; a; a] @@ t_array a);
+      ];
+      "ref-get", t_top;
+      "ref-set", t_top;
+      "ref-freeze", t_top;
+      "equal-always", t_pred2;
+      "equal-always3", t_top;
+      "equal-now", t_pred2;
+      "equal-now3", t_top;
+      "identical", t_pred2;
+      "identical3", t_top;
+      "exn-unwrap", t_top;
     ]
+
+let no_builtins =
+  let open CompileEnvironment in
+  let open Globals in
+  let open PyretUtils in
+  CompileEnvironment(Globals(StringDict.empty, StringDict.empty), StringDict.empty)
+
+let minimal_builtins =
+  let open CompileEnvironment in
+  let open Globals in
+  let open PyretUtils in
+  CompileEnvironment(Globals(runtime_builtins, runtime_types), StringDict.empty)
+
+let standard_globals = Globals.Globals(runtime_builtins, runtime_types)
+let standard_builtins =
+  let open CompileEnvironment in
+  let open Globals in
+  let open PyretUtils in
+  CompileEnvironment(standard_globals, StringDict.empty)
+
+let minimal_imports = ExtraImports.ExtraImports([])
+
+let standard_imports =
+  let open Dependency in
+  let open ExtraImport in
+  ExtraImports.ExtraImports([
+      ExtraImport(Builtin("arrays"), "arrays", [
+          "array";
+          "build-array";
+          "array-from-list";
+          "is-array";
+          "array-of";
+          "array-set-now";
+          "array-get-now";
+          "array-length";
+          "array-to-list-now";
+        ], ["Array"]);
+
+      ExtraImport(Builtin("lists"), "lists", [
+          "list";
+          "is-empty";
+          "is-link";
+          "empty";
+          "link";
+          "range";
+          "range-by";
+          "repeat";
+          "filter";
+          "partition";
+          "split-at";
+          "any";
+          "find";
+          "map";
+          "map2";
+          "map3";
+          "map4";
+          "map_n";
+          "map2_n";
+          "map3_n";
+          "map4_n";
+          "each";
+          "each2";
+          "each3";
+          "each4";
+          "each_n";
+          "each2_n";
+          "each3_n";
+          "each4_n";
+          "fold";
+          "fold2";
+          "fold3";
+          "fold4";
+        ], ["List"]);
+
+      ExtraImport(Builtin("option"), "option", [
+          "Option";
+          "is-none";
+          "is-some";
+          "none";
+          "some";
+        ], ["Option"]);
+
+      ExtraImport(Builtin("error"), "error", [], []);
+
+      ExtraImport(Builtin("sets"), "sets",[
+          "set";
+          "tree-set";
+          "list-set";
+        ], ["Set"]);
+  ])

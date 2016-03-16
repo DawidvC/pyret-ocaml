@@ -124,8 +124,38 @@ sig
 end
 
 module CompileEnvironment :
-sig type t = CompileEnvironment of Globals.t * Provides.t PyretUtils.StringDict.t end
+sig
+  type t = CompileEnvironment of Globals.t * Provides.t PyretUtils.StringDict.t
+end
 
 module CompileResult :
   functor (C : sig type t end) ->
-  sig type t = Ok of C.t | Err of CompileError.t list end
+  sig
+    type t = Ok of C.t | Err of CompileError.t list
+  end
+
+type compile_options =
+  { check_mode : bool;
+    type_check : bool;
+    allow_shadowed : bool;
+    collect_all : bool;
+    ignore_unbound : bool;
+    proper_tail_calls: bool; }
+
+val default_compile_options : compile_options
+
+val runtime_types : TypeStructs.Type.t PyretUtils.StringDict.t
+
+val runtime_builtins : TypeStructs.Type.t PyretUtils.StringDict.t
+
+val no_builtins : CompileEnvironment.t
+
+val minimal_builtins : CompileEnvironment.t
+
+val standard_globals : Globals.t
+
+val standard_builtins : CompileEnvironment.t
+
+val minimal_imports : ExtraImports.t
+
+val standard_imports : ExtraImports.t
