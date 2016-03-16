@@ -146,3 +146,77 @@ module CompileResult (C : sig type t end) = struct
       Ok of C.t
     | Err of CompileError.t list
 end
+
+type compile_options =
+  { check_mode : bool;
+    type_check : bool;
+    allow_shadowed : bool;
+    collect_all : bool;
+    ignore_unbound : bool;
+    proper_tail_calls: bool; }
+
+let default_compile_options =
+  { check_mode = true;
+    type_check = false;
+    allow_shadowed = false;
+    collect_all = false;
+    ignore_unbound = false;
+    proper_tail_calls = true; }
+
+let t_pred = t_arrow [t_top] t_boolean
+let t_pred2 = t_arrow [t_top; t_top] t_boolean
+
+let t_number_binop = t_arrow [t_number; t_number] t_number
+let t_number_unop = t_arrow [t_number] t_number
+let t_number_pred1 = t_arrow [t_number] t_boolean
+let t_within_num = t_arrow [t_number] @@ t_arrow [t_number; t_number] t_boolean
+let t_within_any = t_arrow [t_number] @@ t_arrow [t_top; t_top] t_boolean
+
+let runtime_types = PyretUtils.StringDict.of_list
+    [
+      "Number", t_top;
+      "String", t_string;
+      "Function", t_top;
+      "Boolean", t_top;
+      "Object", t_top;
+      "Method", t_top;
+      "Nothing", t_top;
+      "RawArray", t_top
+    ]
+
+let t_forall1 f =
+  let n = Ast.global_names "a" in
+  t_forall [t_var n] (f (t_var n))
+
+let runtime_builtins =
+  let t_record l = t_record (List.map (fun (name, typ) -> t_member name typ) l) in
+  PyretUtils.StringDict.of_list
+    [
+      "test-print", t_forall1 (fun a -> t_arrow [a] a);
+      "print", t_forall1 (fun a -> t_arrow [a] a);
+      "display", t_forall1 (fun a -> t_arrow [a] a);
+      "print-error", t_forall1 (fun a -> t_arrow [a] a);
+      "display-error", t_forall1 (fun a -> t_arrow [a] a);
+      "tostring", t_arrow [t_top] t_string;
+      "torepr", t_arrow [t_top] t_string;
+      "brander", t_top;
+      "nothing", t_nothing;
+      "builtins", t_record [
+        "has-field", t_arrow [t_record([])] t_boolean;
+        "current-checker", t_arrow [] @@ t_record [
+          "run-checks", t_bot;
+          "check-is", t_bot;
+          "check-is-refinement", t_bot;
+          "check-is-not", t_bot;
+          "check-is-not-refinement", t_bot;
+          "check-satisfies", t_bot;
+          "check-satisfies-not", t_bot;
+          "check-raises-str", t_bot;
+          "check-raises-not", t_bot;
+          "check-raises-other-str", t_bot;
+          "check-raises-satisfies", t_bot;
+          "check-raises-violates", t_bot;
+        ];
+      ];
+      "not", t_arrow [t_boolean] t_boolean
+    ]
