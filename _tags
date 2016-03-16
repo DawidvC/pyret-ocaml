@@ -1,4 +1,4 @@
 <src> : include
 <src/base> : include
 <test> : include
-true : package(oUnit, dyp, extlib, unix, ANSITerminal, batteries, sexplib)
+true : package(oUnit, dyp, extlib, unix, ANSITerminal, batteries, sexplib), annot, bin_annot
