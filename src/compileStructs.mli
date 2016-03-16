@@ -107,9 +107,23 @@ end
 module ExtraImport :
 sig
   type t = ExtraImport of Dependency.t * string * string list * string list
+
+  val dependency : t -> Dependency.t
+  val as_name : t -> string
+  val values : t -> string list
+  val types : t -> string list
 end
 
-module ExtraImports : sig type t = ExtraImports of ExtraImport.t list end
+module ExtraImports :
+sig
+  type t = ExtraImports of ExtraImport.t list
+
+  val imports : t -> ExtraImport.t list
+  val dependencies : t -> Dependency.t list
+  val as_names : t -> string list
+  val values : t -> string list list
+  val types : t -> string list list
+end
 
 module Globals :
 sig

@@ -123,10 +123,33 @@ end
 
 module ExtraImport = struct
   type t = ExtraImport of Dependency.t * string * string list * string list
+
+  let dependency = function
+    | ExtraImport(d,_,_,_) -> d
+
+  let as_name = function
+    | ExtraImport(_,n,_,_) -> n
+
+  let values = function
+    | ExtraImport(_,_,v,_) -> v
+
+  let types = function
+    | ExtraImport(_,_,_,t) -> t
 end
 
 module ExtraImports = struct
   type t = ExtraImports of ExtraImport.t list
+
+  let imports = function
+    | ExtraImports(i) -> i
+
+  let dependencies ei = ei |> imports |> (List.map ExtraImport.dependency)
+
+  let as_names ei = ei |> imports |> (List.map ExtraImport.as_name)
+
+  let values ei = ei |> imports |> (List.map ExtraImport.values)
+
+  let types ei = ei |> imports |> (List.map ExtraImport.types)
 end
 
 module Globals = struct
