@@ -7,7 +7,7 @@ ifeq ($(UNAME), Darwin)
 endif
 endif
 
-BUILD=ocamlbuild -r -use-ocamlfind
+BUILD=ocamlbuild -use-ocamlfind
 SRC=src
 TEST=test
 
