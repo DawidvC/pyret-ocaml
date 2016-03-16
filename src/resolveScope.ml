@@ -262,6 +262,8 @@ class resolve_names_class initial_env =
     val env = scope_env_from_env initial_env
     val type_env = type_env_from_env initial_env
 
+    method get_info () = (!name_errors, bindings, type_bindings, datatypes)
+
 
     method make_anon_import_for : 'a. string -> 'a SD.t -> 'a MutableStringDict.t -> (Ast.name -> 'a) -> 'a bind_pair =
         fun s env bindings b ->
@@ -545,7 +547,203 @@ class resolve_names_class initial_env =
       let one_true_provide = Ast.SProvideComplete(l, val_defs, alias_defs, data_defs) in
       Ast.SProgram(l, one_true_provide, _provide_types, List.rev imports_and_env.imps, visit_body)
 
+    method s_type_let_expr(l, binds, body) =
+      (* Type-bound value environment, type environment, and binding list *)
+      let (e, te, bs) =
+        let foldfun (e, te, bs) = function
+          | Ast.STypeBind(l2, name, ann) ->
+            let atom_env = self#make_atom_for TypeBinding.loc name false te type_bindings
+                (fun l n -> TypeBinding.LetTypeBind(l, n, None)) in
+            let visited_ann = {< env = e; type_env = te>}#visit_ann ann in
+            let new_bind =
+              Ast.STypeBind(l2, atom_env.atom, visited_ann) in
+            self#update_type_binding_ann atom_env.atom (Some(Either.Left(visited_ann)));
+            (e, atom_env.env, new_bind :: bs)
+          | Ast.SNewtypeBind(l2, name, tname) ->
+            let atom_env_t = self#make_atom_for TypeBinding.loc name false te type_bindings
+                (fun l n -> TypeBinding.LetTypeBind(l, n, None)) in
+            let atom_env = self#make_atom_for ScopeBinding.loc name false e bindings
+                (fun l n -> ScopeBinding.LetBind(l, n, Ast.ABlank, None)) in
+            let new_bind = Ast.SNewtypeBind(l2, atom_env_t.atom, atom_env.atom) in
+            self#update_binding_expr atom_env.atom None;
+            self#update_type_binding_ann atom_env_t.atom None;
+            (atom_env.env, atom_env_t.env, new_bind :: bs) in
+        List.fold_left foldfun (env, type_env, []) binds in
+      let visit_body = {< env = e; type_env = te >}#visit_expr body in
+      Ast.STypeLetExpr(l, List.rev bs, visit_body)
 
+    method s_let_expr(l,binds,body) =
+      (* New environment with bound value and binding list *)
+      let (e, bs) =
+        let foldfun (e, bs) = function
+          | (Ast.SLetBind(l2, Ast.SBind(lb, shadows, id, ann), expr) as bnd)
+          | (Ast.SVarBind(l2, Ast.SBind(lb, shadows, id, ann), expr) as bnd) ->
+            let new_visitor = {< env = e >} in
+            let visited_ann = new_visitor#visit_ann ann in
+            let mk_bind = match bnd with
+              | Ast.SLetBind(_,_,_) -> fun l n -> ScopeBinding.LetBind(l, n, visited_ann, None)
+              | Ast.SVarBind(_,_,_) -> fun l n -> ScopeBinding.VarBind(l, n, visited_ann, None) in
+            let atom_env = self#make_atom_for ScopeBinding.loc id shadows e bindings mk_bind in
+            let visit_expr = new_visitor#visit_expr expr in
+            self#update_binding_expr atom_env.atom (Some(Either.Left(visit_expr)));
+            let new_s_bind = Ast.SBind(l2, shadows, atom_env.atom, visited_ann) in
+            let new_bind = match bnd with
+              | Ast.SLetBind(_,_,_) -> Ast.SLetBind(l2, new_s_bind, visit_expr)
+              | Ast.SVarBind(_,_,_) -> Ast.SVarBind(l2, new_s_bind, visit_expr) in
+            atom_env.env, new_bind :: bs in
+        List.fold_left foldfun (env, []) binds in
+      let visit_binds = List.rev bs in
+      let visit_body = {< env = e >}#visit_expr body in
+      Ast.SLetExpr(l, visit_binds, visit_body)
+
+    method s_letrec(l, binds, body) =
+      let new_binds, visitor = self#resolve_letrec_binds binds in
+      let visit_body = visitor#visit_expr body in
+      Ast.SLetrec(l, new_binds, visit_body)
+
+    method s_for(l, iter, binds, ann, body) =
+      (* Bound Environment and Bindings *)
+      let (e, fbs) =
+        let foldfun (env, fbs) = function
+          | Ast.SForBind(l2, Ast.SBind(bl, shadows, id, ann), value) ->
+            let atom_env = self#make_atom_for ScopeBinding.loc id shadows env bindings
+                (fun l n -> ScopeBinding.LetBind(l, n, ann, None)) in
+            let new_bind = Ast.SBind(bl, shadows, atom_env.atom, {< env = env >}#visit_ann ann) in
+            let visit_val = self#visit_expr value in
+            self#update_binding_expr atom_env.atom (Some(Either.Left(visit_val)));
+            let new_fb = Ast.SForBind(l2, new_bind, visit_val) in
+            atom_env.env, new_fb :: fbs in
+        List.fold_left foldfun (env, []) binds in
+      Ast.SFor(l, self#visit_expr iter, List.rev fbs, self#visit_ann ann,
+               {< env = e >}#visit_expr body)
+
+    method s_cases_branch(l, pat_loc, name, args, body) =
+      let (e, atoms) =
+        let foldfun (env, atoms) = function
+          | Ast.SCasesBind(_,_, Ast.SBind(_, shadows, id, ann)) ->
+            let atom_env = self#make_atom_for ScopeBinding.loc id shadows env bindings
+                (fun l n -> ScopeBinding.LetBind(l, n, self#visit_ann ann, None)) in
+            atom_env.env, atom_env.atom :: atoms in
+        List.fold_left foldfun (env, []) args in
+      let new_visitor = {< env = e >} in
+      let new_args =
+        let mapfun a at =
+          match a with
+          | Ast.SCasesBind(l2, typ, Ast.SBind(l3, shadows, id, ann)) ->
+            Ast.SCasesBind(l2, typ, Ast.SBind(l3, false, at, new_visitor#visit_ann ann)) in
+        List.map2 mapfun args (List.rev atoms) in
+      let new_body = new_visitor#visit_expr body in
+      Ast.SCasesBranch(l, pat_loc, name, new_args, new_body)
+
+    method s_data_expr(l, name, namet, params, mixins, variants, shared_members, _check) =
+      let (te, atoms) =
+        let foldfun (env, atoms) param =
+          let atom_env = self#make_atom_for TypeBinding.loc param false env type_bindings
+              (fun l n -> TypeBinding.TypeVarBind(l, n, None)) in
+          atom_env.env, atom_env.atom :: atoms in
+        List.fold_left foldfun (type_env, []) params in
+      (* Binding environment with type parameters in scope *)
+      let with_params = {< type_env = te >} in
+      let result = Ast.SDataExpr(l, name, namet, List.rev atoms,
+                                 List.map with_params#visit_expr mixins,
+                                 List.map with_params#visit_variant variants,
+                                 List.map with_params#visit_member shared_members,
+                                 with_params#visit_expr_option _check) in
+      MutableStringDict.add datatypes (Ast.name_key namet) result;
+      result
+
+    method s_lam(l, params, args, ann, doc, body, _check) =
+      let (te, ntype_atoms) =
+        let foldfun (env, atoms) param =
+          let atom_env = self#make_atom_for TypeBinding.loc param false env type_bindings
+              (fun l n -> TypeBinding.TypeVarBind(l, n, None)) in
+          atom_env.env, atom_env.atom :: atoms in
+        List.fold_left foldfun (type_env, []) params in
+      (* Binding environment with type parameters in scope *)
+      let with_params = {< type_env = te >} in
+      let (e, scope_atoms) =
+        let foldfun (env, atoms) = function
+          | Ast.SBind(_, shadows, id, ann) ->
+            let atom_env = self#make_atom_for ScopeBinding.loc id shadows env bindings
+                (fun l n -> ScopeBinding.LetBind(l, n, with_params#visit_ann ann, None)) in
+            atom_env.env, atom_env.atom :: atoms in
+        (* In Pyret, this is with-params.env, but, since env is immutable, this
+           should be equivalent. *)
+        List.fold_left foldfun (env, []) args in
+      let new_args =
+        let mapfun a at =
+          match a with
+          | Ast.SBind(l2, shadows, id, ann2) ->
+            Ast.SBind(l2, false, at, with_params#visit_ann ann2) in
+        List.map2 mapfun args (List.rev scope_atoms) in
+      let with_params_and_args = {< env = e; type_env = te >} in
+      let new_body = with_params_and_args#visit_expr body in
+      (* Suppress _check errors since the programmer will have already seen them
+         during the desugaring of _check (which should have already occurred) *)
+      let saved_named_errors = !name_errors in
+      (* Note from Pyret: This might need to be `self', depending on whether type
+         parameters should be in scope for _check blocks *)
+      let new_check = with_params#visit_expr_option _check in
+      name_errors := saved_named_errors;
+      Ast.SLam(l, List.rev ntype_atoms, new_args, with_params#visit_ann ann, doc,
+               new_body, new_check)
+
+    method s_method(l, params, args, ann, doc, body, _check) =
+      (* Delegating like this may be lazy, but this class is not extended,
+         so we shouldn't have any issues. *)
+      match self#s_lam(l, params, args, ann, doc, body, _check) with
+      | Ast.SLam(l, params, args, ann, doc, body, _check) ->
+        Ast.SMethod(l, params, args, ann, doc, body, _check)
+      | _ -> failwith "Impossible"
+
+    method s_method_field(l, name, params, args, ann, doc, body, _check) =
+      match self#s_lam(l, params, args, ann, doc, body, _check) with
+      | Ast.SLam(l, params, args, ann, doc, body, _check) ->
+        Ast.SMethodField(l, name, params, args, ann, doc, body, _check)
+      | _ -> failwith "Impossible"
+
+    method s_assign(l, id, expr) =
+      match id with
+      | Ast.SName(l2, s) ->
+        if StringDict.mem s env then
+          Ast.SAssign(l, ScopeBinding.atom (StringDict.find s env), self#visit_expr expr)
+          (* Checking if the binding is actually a var binding happens later *)
+        else
+          Ast.SAssign(l, id, self#visit_expr expr) (* TODO: Should this be an s-global? *)
+      | Ast.SUnderscore(_) ->
+        Ast.SAssign(l, id, self#visit_expr expr)
+      | _ -> failwith ("Wasn't expecting a non-s-name in resolve-names for argument: "
+                       ^ (Sexplib.Sexp.to_string_hum @@ Ast.sexp_of_name id))
+
+    method s_id(l, id) =
+      match id with
+      | Ast.SName(l2, s) ->
+        (match StringDict.lookup s env with
+         | None -> Ast.SId(l2, Ast.SGlobal(s))
+         | Some(sb) ->
+           let open ScopeBinding in
+           match sb with
+           | LetBind(_, atom, _, _)
+           | VarBind(_, atom, _, _)
+           | GlobalBind(_, atom, _)
+           | ModuleBind(_, atom, _, _) -> Ast.SId(l2, atom)
+           | LetrecBind(_, atom, _, _) -> Ast.SIdLetrec(l2, atom, false))
+      | Ast.SAtom(_,_)
+      | Ast.SUnderscore(_) -> Ast.SId(l, id)
+      | _ -> failwith ("Wasn't expecting a non-s-name in resolve-names id: "
+                       ^ (Sexplib.Sexp.to_string_hum @@ Ast.sexp_of_name id))
+
+    method s_id_letrec(l, id, _) = Ast.SIdLetrec(l, self#handle_id env id, false)
+    method s_id_var(l, id) = Ast.SIdVar(l, self#handle_id env id)
+
+    method s_variant_member(l, typ, bind) =
+      let new_bind = match bind with
+        | Ast.SBind(l2, shadows, name, ann) ->
+          let visited_ann = self#visit_ann ann in
+          let atom_env = self#make_atom_for ScopeBinding.loc name true env bindings
+              (fun l n -> ScopeBinding.LetBind(l, n, visited_ann, None)) in
+          Ast.SBind(l2, shadows, atom_env.atom, visited_ann) in
+      Ast.SVariantMember(l, typ, new_bind)
 
     method s_bind(l, shadows, id, ann) =
       match id with
@@ -575,3 +773,17 @@ class resolve_names_class initial_env =
         Ast.ABlank
     method a_field(l, name, ann) = Ast.AField(l, name, self#visit_ann ann)
 end
+
+
+(** Turns all `SName's into `SAtom' or `SGlobal'
+Requires:
+  1. desugar_scope
+Preconditions on p:
+  - Contains no SBlock, SLet, SVar, SData, SRec
+Postconditions on p (in addition to preconditions):
+  - Contains no SName in names *)
+let resolve_names (p : Ast.program) (initial_env : CompileEnvironment.t) =
+  let obj = new resolve_names_class initial_env in
+  let visited = obj#visit_program p in
+  let name_errors, bindings, type_bindings, datatypes = obj#get_info() in
+  NameResolution.Resolved(visited, name_errors, bindings, type_bindings, datatypes)
