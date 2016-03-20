@@ -168,6 +168,14 @@ module CompileResult (C : sig type t end) = struct
   type t =
       Ok of C.t
     | Err of CompileError.t list
+
+  let sexp_of_t fmt =
+    let len = List.length in
+    let open Sexplib.Sexp in
+    function
+    | Ok(res) -> List [Atom "Ok"; fmt res]
+    | Err(lst) ->
+      List [Atom "Err"; Atom (Printf.sprintf "<%d compile errors>" @@ len lst)]
 end
 
 type compile_options =
