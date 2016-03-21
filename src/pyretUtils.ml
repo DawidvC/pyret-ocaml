@@ -60,6 +60,8 @@ module rec MutableStringDict : sig
   val bindings : 'a t -> (string * 'a) list
 
   val freeze : 'a t -> 'a StringDict.t
+
+  val merge : 'a t -> 'a t -> unit
 end = struct
   include Hashtbl.Make(PyretStringExt)
   (** Adds each item in the given list to the given dictionary *)
@@ -84,6 +86,9 @@ end = struct
 
   let freeze dict =
     StringDict.add_each StringDict.empty (bindings dict)
+
+  let merge dict other =
+    add_each dict @@ bindings other
 end
 
 (** Immutable String Dictionary Module *)
