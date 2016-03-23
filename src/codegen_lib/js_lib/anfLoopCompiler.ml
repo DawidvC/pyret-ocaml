@@ -196,32 +196,123 @@ let arity_check loc_expr arity =
 
 let no_vars () = MutableStringDict.create 1
 
+(** Like MutableStringDict.merge, but returns the merged dictionary
+    (i.e. this is a functional version) *)
+let func_merge dct1 dct2 =
+  MutableStringDict.merge dct1 dct2;
+  dct1
+
+let flip (f : 'a -> 'b -> 'c) : ('b -> 'a -> 'c) = fun a b -> f b a
+
+(** `flip_merge a b' == `func_merge b a' (useful for pipelining) *)
+let flip_merge = flip func_merge
+
 class local_bound_vars_visitor = object(self)
+  inherit [Ast.name MutableStringDict.t] JBlock.visitor
+  inherit [Ast.name MutableStringDict.t] JStmt.visitor
+  inherit [Ast.name MutableStringDict.t] JCase.visitor
   inherit [Ast.name MutableStringDict.t] JExpr.visitor
   inherit [Ast.name MutableStringDict.t] JField.visitor
+
+  method j_block(stmts) =
+    let base = MutableStringDict.create 50 in
+    (* Reminder: `||>' is function composition *)
+    iter (MutableStringDict.merge base ||> self # visit_jstmt) stmts;
+    base
+
+  method j_var(name, rhs) =
+    (* Ignore all variables named $underscore##### *)
+    match name with
+    | Ast.SAtom("$underscore", _) -> self # visit_jexpr rhs
+    | _ ->
+      let ans = self # visit_jexpr rhs in
+      MutableStringDict.add ans (Ast.name_key name) name;
+      ans
+  method j_if1(cond, consq) =
+    self # visit_jexpr cond
+    |> flip_merge @@ self # visit_jblock consq
+  method j_if(cond, consq, alt) =
+    self # visit_jexpr cond
+    |> flip_merge @@ self # visit_jblock consq
+    |> flip_merge @@ self # visit_jblock alt
+  (* Just visit return's contents *)
+  method j_return = self # visit_jexpr
+  method j_try_catch(body, _, catch) =
+    self # visit_jblock body
+    |> flip_merge @@ self # visit_jblock catch
+  (* Just visit throw's contents *)
+  method j_throw = self # visit_jexpr
+  (* Just visit expression in statement*)
+  method j_s_expr = self # visit_jexpr
+  method j_break() = no_vars()
+  method j_continue() = no_vars()
+  method j_switch(exp, branches) =
+    let base = self # visit_jexpr exp in
+    iter (MutableStringDict.merge base ||> self # visit_jcase) branches;
+    base
+  method j_while(cond, body) =
+    self # visit_jexpr cond
+    |> flip_merge @@ self # visit_jblock body
+  method j_for(_, init, cond, update, body) =
+    self # visit_jexpr init
+    |> flip_merge @@ self # visit_jexpr cond
+    |> flip_merge @@ self # visit_jexpr update
+    |> flip_merge @@ self # visit_jblock body
+
+  method j_case(exp, body) =
+    self # visit_jexpr exp
+    |> flip_merge @@ self # visit_jblock body
+  (* Just visit default's body*)
+  method j_default = self # visit_jblock
 
   (* Just visit contents *)
   method j_parens = self # visit_jexpr
   method j_unop(exp, _) = self # visit_jexpr exp
   method j_binop(left, _, right) =
-    let ans = self # visit_jexpr left in
-    MutableStringDict.merge ans @@ self # visit_jexpr right;
-    ans
+    self # visit_jexpr left
+    |> flip_merge  @@ self # visit_jexpr right
   method j_fun _ = no_vars()
   method j_new(func, args) =
     let base = self # visit_jexpr func in
-    iter (fun arg -> MutableStringDict.merge base @@ self # visit_jexpr arg) args;
+    iter (MutableStringDict.merge base ||> self # visit_jexpr) args;
     base
   method j_app(func, args) =
     let base = self # visit_jexpr func in
-    iter (fun arg -> MutableStringDict.merge base @@ self # visit_jexpr arg) args;
+    iter (MutableStringDict.merge base ||> self # visit_jexpr) args;
     base
   method j_method _ = no_vars()
   method j_ternary(test, consq, alt) =
-    let ans = self # visit_jexpr test in
-    MutableStringDict.merge ans @@ self # visit_jexpr consq;
-    MutableStringDict.merge ans @@ self # visit_jexpr alt;
-    ans
+    self # visit_jexpr test
+    |> flip_merge @@ self # visit_jexpr consq
+    |> flip_merge @@ self # visit_jexpr alt
+  method j_assign(_, rhs) = self # visit_jexpr rhs
+  method j_bracket_assign(obj, field, rhs) =
+    self # visit_jexpr obj
+    |> flip_merge @@ self # visit_jexpr field
+    |> flip_merge @@ self # visit_jexpr rhs
+  method j_dot_assign(obj, _, rhs) =
+    self # visit_jexpr obj
+    |> flip_merge @@ self # visit_jexpr rhs
+  method j_dot(obj, _) = self # visit_jexpr obj
+  method j_bracket(obj, field) =
+    self # visit_jexpr obj
+    |> flip_merge @@ self # visit_jexpr field
+  method j_list(_, elts) =
+    let base = MutableStringDict.create 10 in
+    iter (MutableStringDict.merge base ||> self # visit_jexpr) elts;
+    base
+  method j_obj(fields) =
+    let base = MutableStringDict.create 10 in
+    iter (MutableStringDict.merge base ||> self # visit_jfield) fields;
+    base
+  method j_id(_)   = no_vars()
+  method j_str(_)  = no_vars()
+  method j_num(_)  = no_vars()
+  method j_true()  = no_vars()
+  method j_false() = no_vars()
+  method j_null()  = no_vars()
+  method j_undefined() = no_vars()
+  method j_label(_) = no_vars()
 
   method j_field(_, value) = self # visit_jexpr value
 end
