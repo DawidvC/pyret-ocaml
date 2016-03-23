@@ -180,3 +180,7 @@ let rec fold_while : 'a 'b. ('a -> 'b -> ('a,'a) Either.t) -> 'a -> 'b list -> '
     match (f base hd) with
     | Either.Left(v) -> fold_while f v tl
     | Either.Right(v) -> v
+
+(* Function composition operator *)
+let (||>) : 'a 'b 'c. ('b -> 'c) -> ('a -> 'b) -> ('a -> 'c) =
+  fun f g x -> f @@ g x

@@ -135,3 +135,7 @@ let rec map_list2 (f : 'a -> 'b -> 'c) (l1 : 'a list) (l2 : 'b list) : 'c t =
   | ([],_)
   | (_,[]) -> ConcatEmpty
   | (hd1 :: tl1, hd2 :: tl2) -> ConcatCons(f hd1 hd2, map_list2 f tl1 tl2)
+
+(** Returns a ConcatList representation of the given list *)
+let of_list (l : 'a list) : 'a t =
+  List.fold_left (fun acc elt -> ConcatSnoc(acc, elt)) ConcatEmpty l
