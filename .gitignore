@@ -2,3 +2,4 @@ _build
 run_tests
 main
 lex
+*.native
