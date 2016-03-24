@@ -1369,3 +1369,29 @@ class virtual compiler_visitor gl ca r opts = object(self)
     CExp(data_object, shared_stmts |@> header_stmts)
 
 end
+
+(* TODO: Why is this done here and not during some sort of desugaring? *)
+class remove_useless_if_visitor = object(self)
+  inherit AstAnf.default_map_visitor
+
+  method a_if(l, c, t, e) =
+    let open AstAnf in
+    match c with
+    | ABool(_, test) ->
+      if test then
+        begin
+          let visit_t = self#visit_expr t in
+          match visit_t with
+          | ALettable(_, expr) -> expr
+          | _ -> AIf(l, self#visit_value c, visit_t, self#visit_expr e)
+        end
+      else
+        begin
+          let visit_e = self#visit_expr e in
+          match visit_e with
+          | ALettable(_, expr) -> expr
+          | _ -> AIf(l, self#visit_value c, self#visit_expr t, visit_e)
+        end
+    | _ -> AIf(l, self#visit_value c, self#visit_expr t, self#visit_expr e)
+
+end
