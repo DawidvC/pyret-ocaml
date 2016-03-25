@@ -164,12 +164,12 @@ module CompileEnvironment = struct
   type t = CompileEnvironment of Globals.t * Provides.t SD.t
 end
 
-module CompileResult (C : sig type t end) = struct
-  type t =
-      Ok of C.t
+module CompileResult = struct
+  type 'a t =
+      Ok of 'a
     | Err of CompileError.t list
 
-  let sexp_of_t fmt =
+  let sexp_of_t (fmt : 'a -> Sexplib.Sexp.t) : ('a t -> Sexplib.Sexp.t) =
     let len = List.length in
     let open Sexplib.Sexp in
     function

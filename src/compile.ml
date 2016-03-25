@@ -17,8 +17,8 @@ module CompilationPhase = struct
 end
 
 let compile_js_ast phases ast name env libs options =
-  let open WellFormed.CompileResult in
   let open CompileStructs in
+  let open CompileResult in
   let open CompilationPhase in
   let sstr : 'a. ('a -> Sexplib.Sexp.t) -> 'a -> string = fun fmt value ->
     Sexplib.Sexp.to_string_hum (fmt value) in
@@ -34,7 +34,7 @@ let compile_js_ast phases ast name env libs options =
     @@ (match ast_ended with
         | Some(v) -> v
         | None -> ast) in
-  set_phase "Checked well-formedness" (sstr @@ CompileResult.sexp_of_t Ast.sexp_of_program) wf;
+  (*set_phase "Checked well-formedness" (sstr @@ CompileResult.sexp_of_t Ast.sexp_of_program) wf;*)
   let checker =
     if options.check_mode then
       DesugarCheck.desugar_check else DesugarCheck.desugar_no_checks in
@@ -67,7 +67,19 @@ let compile_js_ast phases ast name env libs options =
             |> (new AstUtils.link_list_visitor env)#visit_program
             |> (new AstUtils.letrec_visitor)#visit_program in
           let inlined = (new AstUtils.inline_lams)#visit_program cleaned in
-          failwith "TODO: Code Generation"
+          (match any_errors with
+           | [] -> Ok(Codegen.Js.OfPyret.make_compiled_pyret inlined env options)
+           | _ -> Err(any_errors))
         | Err(_) -> failwith "Impossible" (* Type-checking can't fail if it doesn't happen *)
     end
   | Err(_) -> failwith "Error"
+
+let compile_js trace code name env libs options =
+  let open CompilationPhase in
+  let ret = ref trace in
+  (* FIXME: The lexing/parsing bit should be abstracted out elsewhere *)
+  let lexbuf = Lexing.from_string code in
+  let ast = fst @@ List.hd @@ Parser.program Lexer.token lexbuf in
+  (if options.CompileStructs.collect_all then
+    ret := Phase("Parsed", (fun () -> Sexplib.Sexp.to_string_hum @@ Ast.sexp_of_program ast), !ret));
+  compile_js_ast !ret ast name env libs options

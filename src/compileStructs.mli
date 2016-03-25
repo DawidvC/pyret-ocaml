@@ -143,10 +143,9 @@ sig
 end
 
 module CompileResult :
-  functor (C : sig type t end) ->
   sig
-    type t = Ok of C.t | Err of CompileError.t list
-    val sexp_of_t : (C.t -> Sexplib.Sexp.t) -> t -> Sexplib.Sexp.t
+    type 'a t = Ok of 'a | Err of CompileError.t list
+    val sexp_of_t : ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
   end
 
 type compile_options =

@@ -13,7 +13,8 @@ type pyret_code =
   | PyretAst of A.program
 
 type loadable =
-    ModuleAsString of CS.Provides.t * CS.CompileEnvironment.t * CS.CompileResult(CS.Provides).t
+    ModuleAsString of CS.Provides.t * CS.CompileEnvironment.t
+                      * Codegen.Js.OfPyret.compiled_code_printer CS.CompileResult.t
   (* Until I actually understand how best to do builtin modules, this remains commented out.
      | PreLoaded of CS.Provides.t * CS.CompileEnvironment.t * 'a*)
 
@@ -174,7 +175,8 @@ and compile_module locator provide_map modules options =
   if locator.needs_compile provide_map then
     begin
       let open CompileStructs in
-      let open WellFormed.CompileResult in
+      let open CompileResult in
+      let open Compile.CompilationPhase in
       let env = CS.CompileEnvironment.CompileEnvironment(locator.get_globals(), provide_map) in
       let libs = locator.get_extra_imports() in
       let _module = locator.get_module() in
@@ -182,10 +184,10 @@ and compile_module locator provide_map modules options =
         match _module with
         | PyretString(module_string) -> failwith "NYI: compile_module PyretString"
         | PyretAst(module_ast) -> module_ast in
-      let ret = ref Compile.Start in
+      let ret = ref Start in
       let set_phase str fmt v =
         if options.collect_all then
-          ret := Compile.Phase(str, fmt v, !ret) in
+          ret := Phase(str, (fun () -> fmt v), !ret) in
       let ssexp : 'a. ('a -> Sexplib.Sexp.t) -> 'a -> string =
         fun fmt v -> Sexplib.Sexp.to_string_hum (fmt v) in
       let ast_ended = AstUtils.append_nothing_if_necessary ast in
@@ -229,9 +231,9 @@ and compile_module locator provide_map modules options =
             let inlined = (new AstUtils.inline_lams)#visit_program cleaned in
             let cr =
               match any_errors with
-              | [] -> failwith "NYI: Codegen"
-              | _ -> failwith "NYI: Codegen" in
-            let mod_result = ModuleAsString(provides, env, failwith "TODO: cr.result") in
+              | [] -> Ok(Codegen.Js.OfPyret.make_compiled_pyret inlined env options)
+              | _ -> Err(any_errors) in
+            let mod_result = ModuleAsString(provides, env, cr) in
             locator.set_compiled mod_result provide_map;
             mod_result
           | Err(_) -> failwith "Impossible"

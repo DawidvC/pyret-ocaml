@@ -665,8 +665,6 @@ class top_level_visitor = object(self)
   method a_field = wfv#a_field
 end
 
-module CompileResult = C.CompileResult(struct type t = A.program end)
-
 let check_well_formed ast =
   cur_shared := [];
   errors := [];
@@ -674,9 +672,9 @@ let check_well_formed ast =
   let tlv = new top_level_visitor in
   let ans =
     (if (tlv#visit_program ast) && ((List.length !errors) = 0) then
-       CompileResult.Ok(ast)
+       C.CompileResult.Ok(ast)
      else
-       CompileResult.Err(!errors)) in
+       C.CompileResult.Err(!errors)) in
   cur_shared := [];
   errors := [];
   in_check_block := false;
