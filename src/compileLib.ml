@@ -1,24 +1,24 @@
+open CompileStructs
+open PyretUtils
+
 module A = Ast
-module SD = PyretUtils.StringDict
-module CS = CompileStructs
+module SD = StringDict
 module W = WellFormed
 module D = Desugar
 module CH = DesugarCheck
 module AU = AstUtils
-
-type uri = CS.uri
 
 type pyret_code =
     PyretString of string
   | PyretAst of A.program
 
 type loadable =
-    ModuleAsString of CS.Provides.t * CS.CompileEnvironment.t
-                      * Codegen.Js.OfPyret.compiled_code_printer CS.CompileResult.t
+    ModuleAsString of Provides.t * CompileEnvironment.t
+                      * Codegen.Js.OfPyret.compiled_code_printer CompileResult.t
   (* Until I actually understand how best to do builtin modules, this remains commented out.
-     | PreLoaded of CS.Provides.t * CS.CompileEnvironment.t * 'a*)
+     | PreLoaded of Provides.t * CompileEnvironment.t * 'a*)
 
-type provides = CS.Provides.t
+type provides = Provides.t
 
 type locator = {
   (** Could either have needs_provide be implicitly stateful, and cache the most
@@ -29,13 +29,13 @@ type locator = {
   get_module : unit -> pyret_code;
 
   (** Pre-compile (had better be known with no other help) *)
-  get_dependencies : unit -> CS.Dependency.t list;
+  get_dependencies : unit -> Dependency.t list;
 
   (** Pre-compile *)
-  get_extra_imports : unit -> CS.ExtraImports.t;
+  get_extra_imports : unit -> ExtraImports.t;
 
   (** Pre-compile, specification of available globals *)
-  get_globals : unit -> CS.Globals.t;
+  get_globals : unit -> Globals.t;
 
   (** Post-compile, on-run (maybe dynamic and new namespace) *)
   get_namespace : unit -> unit; (* FIXME: Missing R.Runtime.t and N.Namespace.t *)
@@ -47,7 +47,7 @@ type locator = {
   name : unit -> string;
 
   (** TODO: Figure out what this does *)
-  set_compiled : loadable -> CompileStructs.Provides.t SD.t -> unit;
+  set_compiled : loadable -> Provides.t SD.t -> unit;
 
   (** Pre-compile if needs-compile is false *)
   get_compiled : unit -> loadable option;
@@ -60,13 +60,18 @@ and 'a located = Located of locator * 'a
 
 type to_compile = {
   locator : locator;
-  dependency_map : locator PyretUtils.MutableStringDict.t;
+  dependency_map : locator MutableStringDict.t;
   path : to_compile list;
 }
 
 type compiled_program = {
   loadables : loadable list;
-  modules : loadable PyretUtils.MutableStringDict.t
+  modules : loadable MutableStringDict.t
+}
+
+type load_info = {
+  to_compile : to_compile;
+  compiled_mod : loadable
 }
 
 let get_ast (p : pyret_code) (uri : uri) =
@@ -89,17 +94,17 @@ let get_dependencies (p : pyret_code) (uri : uri) =
   | Ast.SProgram(_, _, _, imports, _) ->
     List.map (fun i -> AU.import_to_dep @@ get_import_type i) imports
 
-let get_standard_dependencies (p : pyret_code) (uri : uri) : CS.Dependency.t list =
+let get_standard_dependencies (p : pyret_code) (uri : uri) : Dependency.t list =
   let mod_deps = get_dependencies p uri in
-  mod_deps @ CS.ExtraImports.dependencies CS.standard_imports
+  mod_deps @ ExtraImports.dependencies standard_imports
 
 let string_locator (uri : uri) (s : string) =
   {
     needs_compile = (fun _ -> true);
     get_module = (fun () -> PyretString(s));
     get_dependencies = (fun () -> get_standard_dependencies (PyretString(s)) uri);
-    get_extra_imports = (fun () -> CompileStructs.standard_imports);
-    get_globals = (fun () -> CompileStructs.standard_globals);
+    get_extra_imports = (fun () -> standard_imports);
+    get_globals = (fun () -> standard_globals);
     get_namespace = (fun () -> failwith "NYI");
     uri = (fun () -> uri);
     name = (fun () -> uri);
@@ -111,24 +116,24 @@ let string_locator (uri : uri) (s : string) =
 let const_dict : 'a. string list -> 'a -> 'a SD.t = fun strs value ->
   List.fold_left (fun d s -> SD.add s value d) SD.empty strs
 
-let dict_map : 'a 'b. 'a PyretUtils.MutableStringDict.t -> (string -> 'a -> 'b) -> 'b SD.t =
+let dict_map : 'a 'b. 'a MutableStringDict.t -> (string -> 'a -> 'b) -> 'b SD.t =
   fun msd f ->
-    let open PyretUtils.MutableStringDict in
+    let open MutableStringDict in
     List.fold_left(fun sd2 (k,v) ->
         SD.add k (f k v) sd2) SD.empty (bindings msd)
 
 let dummy_provides uri =
-  CS.Provides.Provides(uri, SD.empty, SD.empty, SD.empty)
+  Provides.Provides(uri, SD.empty, SD.empty, SD.empty)
 
-let compile_worklist : 'a. ('a -> CS.Dependency.t -> 'a located) -> locator -> 'a -> to_compile list =
+let compile_worklist : 'a. ('a -> Dependency.t -> 'a located) -> locator -> 'a -> to_compile list =
   fun dfind locator context ->
     let rec add_preds_to_worklist locator context curr_path =
       let _ =
-        let res = PyretUtils.list_find (fun tc -> tc.locator = locator) curr_path in
+        let res = list_find (fun tc -> tc.locator = locator) curr_path in
         if (match res with | Some(_) -> true | None -> false) then
           failwith @@ "Detected module cycle: " ^
-          (PyretUtils.join_str (List.map (fun a -> a.locator.uri()) curr_path) ", ") in
-      let open PyretUtils.MutableStringDict in
+          (join_str (List.map (fun a -> a.locator.uri()) curr_path) ", ") in
+      let open MutableStringDict in
       let pmap = create 30 in
       let deps = locator.get_dependencies() in
       let found_mods =
@@ -136,7 +141,7 @@ let compile_worklist : 'a. ('a -> CS.Dependency.t -> 'a located) -> locator -> '
           let found = dfind context d in
           match found with
           | Located(locator,_) ->
-            add pmap (CS.Dependency.key d) locator;
+            add pmap (Dependency.key d) locator;
             found in
         List.map mapfun deps in
       let tocomp = { locator = locator; dependency_map = pmap; path = curr_path } in
@@ -151,7 +156,6 @@ let rec compile_program_with (worklist : to_compile list) modules options =
   let cache = modules in
   let loadables =
     let mapfun w =
-      let open PyretUtils in
       let uri = w.locator.uri() in
       if not (MutableStringDict.mem cache uri) then
         begin
@@ -169,15 +173,14 @@ let rec compile_program_with (worklist : to_compile list) modules options =
   { loadables = loadables; modules = cache }
 
 and compile_program worklist options =
-  compile_program_with worklist (PyretUtils.MutableStringDict.create 30) options
+  compile_program_with worklist (MutableStringDict.create 30) options
 
 and compile_module locator provide_map modules options =
   if locator.needs_compile provide_map then
     begin
-      let open CompileStructs in
       let open CompileResult in
       let open Compile.CompilationPhase in
-      let env = CS.CompileEnvironment.CompileEnvironment(locator.get_globals(), provide_map) in
+      let env = CompileEnvironment.CompileEnvironment(locator.get_globals(), provide_map) in
       let libs = locator.get_extra_imports() in
       let _module = locator.get_module() in
       let ast =
@@ -244,3 +247,60 @@ and compile_module locator provide_map modules options =
     match locator.get_compiled() with
     | None -> failwith @@ "No precompiled module found for " ^ (locator.uri())
     | Some(v) -> v
+
+let rec compile_and_run_worklist_with (ws : to_compile list) runtime initial options =
+  let compiled_mods = (compile_program_with ws initial options).loadables in
+  let errors =
+    compiled_mods
+    |> List.filter is_error_compilation in
+  match errors with
+  | [] ->
+    let load_infos = List.map2 (fun tc cm -> { to_compile = tc; compiled_mod = cm })
+        ws compiled_mods in
+    Either.Right(load_worklist load_infos SD.empty (failwith "L.make-loader(runtime)") runtime)
+  | _ ->
+    Either.Left(List.map (function
+        | ModuleAsString(_, _, rp) -> rp
+        | _ -> failwith "Impossible: Non-ModuleAsString's filtered out") errors)
+
+and compile_and_run_worklist ws runtime options =
+  compile_and_run_worklist_with ws runtime (MutableStringDict.create 50) options
+
+and is_error_compilation = function
+  | ModuleAsString(_, _, CompileResult.Err(_)) -> true
+  | _ -> false
+
+and run_program ws prog runtime options = failwith "NYI: run_program"
+
+and load_worklist ws modvals loader runtime =
+  let open CompileResult in
+  match ws with
+  | [] ->
+    failwith "Didn't get anything to run in load_worklist"
+  | load_info :: tl ->
+    let depmap = load_info.to_compile.dependency_map in
+    let dependencies = load_info.to_compile.locator.get_dependencies() in
+    let depnames = List.map (Dependency.key) dependencies in
+    let get_depmap_uri d =
+      let depmapval = MutableStringDict.find depmap d in
+      depmapval.uri() in
+    let depvals = List.map (fun d ->
+        { modval = StringDict.find modvals @@ get_depmap_uri d; key = d }) depnames in
+    let m = load_info.compiled_mod in
+    (match m with
+     | ModuleAsString(_, _, Err(problems)) ->
+       (* FIXME: Should be semantically similar to `raise(m.result-printer.problems)'*)
+       ValueSkeleton.of_list CompileError.to_vs problems ()
+       |> ValueSkeleton.render
+       |> failwith
+     | _ -> ());
+    let ans = loader.load m depvals (load_info.to_compile.locator.get_namespace(runtime)) in
+    let modvals_new = StringDict.add (load_info.to_compile.locator.uri()) ans modvals in
+    let answer = loader.run ans m (load_info.to_compile.locator.uri()) in
+    match tl with
+    | [] -> answer
+    | _ -> load_worklist tl modvals_new loader runtime
+
+and compile_and_run_locator locator finder context runtime options =
+  let wl = compile_worklist finder locator context in
+  compile_and_run_worklist wl runtime options
