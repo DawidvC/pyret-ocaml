@@ -655,3 +655,11 @@ and freevars_v_acc v seen_so_far =
   | AStr(_, _)
   | ABool(_, _)
   | AUndefined(_) -> seen_so_far
+
+and freevars_prog = function
+  | AProgram(l, _, imports, body) ->
+    let body_vars = freevars_e_acc body (MutableStringDict.create 60) in
+    imports |> List.iter (function
+        | AImportComplete(_, values, types, _, _, _) ->
+          (values @ types) |> List.iter (MutableStringDict.remove body_vars ||> Ast.name_key));
+    MutableStringDict.freeze body_vars
