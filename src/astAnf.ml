@@ -1,5 +1,5 @@
 (** A-Normal Form Type Definitions *)
-module SM = Map.Make(String)
+open PyretUtils
 
 (** Source Locations *)
 type loc = Ast.loc
@@ -496,21 +496,19 @@ class default_map_visitor = object(self)
     AIdLetrec(l, id, safe)
 end
 
-
-(* TODO: Is this used? If so, why was freevars_ann_acc incompatible with the current Ast.ann defn? *)
 let rec freevars_list_acc (anns : Ast.ann list) seen_so_far =
   List.fold_left (fun acc a -> freevars_ann_acc a acc) seen_so_far anns
 
-and freevars_ann_acc (ann : Ast.ann) (seen_so_far : Ast.name SM.t) =
+and freevars_ann_acc (ann : Ast.ann) (seen_so_far : Ast.name MutableStringDict.t) =
   let lst_a = fun x -> freevars_list_acc x seen_so_far in
   let afield_ann af = match af with
     | Ast.AField(_,_,a) -> a in
   match ann with
   | Ast.ABlank -> seen_so_far
   | Ast.AAny -> seen_so_far
-  | Ast.AName(_,name) -> SM.add (Ast.name_key name) name seen_so_far
+  | Ast.AName(_,name) -> MutableStringDict.add seen_so_far (Ast.name_key name) name; seen_so_far
   | Ast.ATypeVar(_,_) -> seen_so_far
-  | Ast.ADot(_,left,_) -> SM.add (Ast.name_key left) left seen_so_far
+  | Ast.ADot(_,left,_) -> MutableStringDict.add seen_so_far (Ast.name_key left) left; seen_so_far
   | Ast.AArrow(_,args,ret,_) -> lst_a (ret::args)
   | Ast.AMethod(_,args,ret) -> lst_a (ret::args)
   | Ast.ARecord(_,fields) -> lst_a (List.map afield_ann fields)
@@ -520,5 +518,140 @@ and freevars_ann_acc (ann : Ast.ann) (seen_so_far : Ast.name SM.t) =
         | Ast.SId(_,n) -> n
         | Ast.SIdLetrec(_,n,_) -> n
         | _ -> failwith "Invalid APred") in
-    freevars_ann_acc a (SM.add (Ast.name_key name) name seen_so_far)
+    MutableStringDict.add seen_so_far (Ast.name_key name) name;
+    freevars_ann_acc a seen_so_far
   | Ast.AChecked(_,_) -> seen_so_far
+
+and freevars_e_acc expr seen_so_far =
+  match expr with
+  | ATypeLet(_, b, body) ->
+    let body_ids = freevars_e_acc body seen_so_far in
+    (match b with
+     | ATypeBind(_, name, ann) ->
+       MutableStringDict.remove body_ids (Ast.name_key name);
+       freevars_ann_acc ann body_ids
+     | ANewtypeBind(_, name, nameb) ->
+       MutableStringDict.remove body_ids (Ast.name_key name);
+       MutableStringDict.remove body_ids (Ast.name_key nameb);
+       body_ids)
+  | ALet(_, ABind(_, id, ann), e, body) ->
+    let from_body = freevars_e_acc body seen_so_far in
+    MutableStringDict.remove from_body (Ast.name_key id);
+    freevars_ann_acc ann @@ freevars_l_acc e from_body
+  | AVar(_, ABind(_, id, ann), e, body) ->
+    let from_body = freevars_e_acc body seen_so_far in
+    MutableStringDict.remove from_body (Ast.name_key id);
+    freevars_ann_acc ann @@ freevars_l_acc e from_body
+  | ASeq(_, e1, e2) ->
+    let from_e2 = freevars_e_acc e2 seen_so_far in
+    freevars_l_acc e1 from_e2
+  | ALettable(_, e) -> freevars_l_acc e seen_so_far
+
+and freevars_e expr =
+  MutableStringDict.freeze @@ freevars_e_acc expr (MutableStringDict.create 30)
+
+and freevars_variant_acc v seen_so_far =
+  let with_members, from_members =
+    match v with
+    | AVariant(_, _, _, members, wm) ->
+      wm, (List.fold_left (fun acc -> function
+          | AVariantMember(_, _, ABind(_, _, ann)) -> freevars_ann_acc ann acc))
+        seen_so_far members
+    | ASingletonVariant(_, _, wm) -> wm, seen_so_far in
+  List.fold_left (fun acc -> function
+      | AField(_, _, value) -> freevars_v_acc value acc) from_members with_members
+
+and freevars_branches_acc branches seen_so_far =
+  branches |> List.fold_left (fun acc ->
+      function
+      | ACasesBranch(_, _, _, args, body) ->
+        let from_body = freevars_e_acc body acc in
+        let args, arg_ids =
+          args
+          |> List.map (function
+              | ACasesBind(_, _, (ABind(_, id, _) as bind)) -> bind, id)
+          |> List.split in
+        let without_args = from_body in
+        List.iter (MutableStringDict.remove without_args ||> Ast.name_key) arg_ids;
+        args |> List.fold_left (fun inner_acc ->
+            function
+            | ABind(_, _, ann) -> freevars_ann_acc ann inner_acc) without_args
+      | ASingletonCasesBranch(_, _, _, body) -> freevars_e_acc body acc) seen_so_far
+
+and freevars_l_acc e seen_so_far =
+  match e with
+  | AModule(_, ans, dv, dt, provs, types, checks) ->
+    freevars_v_acc checks seen_so_far
+    |> freevars_list_acc (List.map (function | Ast.AField(_, _, ann) -> ann) types)
+    |> freevars_v_acc provs
+    |> freevars_v_acc ans
+  | ACases(_, typ, value, branches, _else) ->
+    freevars_e_acc _else seen_so_far
+    |> freevars_branches_acc branches
+    |> freevars_v_acc value
+    |> freevars_ann_acc typ
+  | AIf(_, c, t, a) ->
+    freevars_v_acc c seen_so_far
+    |> freevars_e_acc t
+    |> freevars_e_acc a
+  | AArray(_, vs) ->
+    List.fold_left (fun acc v -> freevars_v_acc v acc) seen_so_far vs
+  | AAssign(_, id, v) ->
+    MutableStringDict.add seen_so_far (Ast.name_key id) id;
+    freevars_v_acc v seen_so_far
+  | AApp(_, f, args) ->
+    let from_f = freevars_v_acc f seen_so_far in
+    List.fold_left (fun acc arg -> freevars_v_acc arg acc) from_f args
+  | AMethodApp(_, obj, _, args) ->
+    let from_obj = freevars_v_acc obj seen_so_far in
+    List.fold_left (fun acc arg -> freevars_v_acc arg acc) from_obj args
+  | APrimApp(_, _, args) ->
+    List.fold_left (fun acc arg -> freevars_v_acc arg acc) seen_so_far args
+  | ALam(_, args, ret, body)
+  | AMethod(_, args, ret, body) ->
+    let from_body = freevars_e_acc body seen_so_far in
+    let without_args = from_body in
+    List.iter (function
+        | ABind(_, id, _) -> MutableStringDict.remove without_args (Ast.name_key id)) args;
+    let from_args = List.fold_left (fun acc -> function
+        | ABind(_, _, ann) -> freevars_ann_acc ann acc) without_args args in
+    freevars_ann_acc ret from_args
+  | ARef(_, maybe_ann) ->
+    (match maybe_ann with
+     | None -> seen_so_far
+     | Some(a) -> freevars_ann_acc a seen_so_far)
+  | AObj(_, fields) ->
+    List.fold_left (fun acc -> function
+        | AField(_, _, value) -> freevars_v_acc value acc) seen_so_far fields
+  | AUpdate(_, supe, fields)
+  | AExtend(_, supe, fields) ->
+    let from_supe = freevars_v_acc supe seen_so_far in
+    List.fold_left (fun acc -> function
+        | AField(_, _, value) -> freevars_v_acc value acc) from_supe fields
+  | ADataExpr(_, _, namet, variants, shared) ->
+    let from_variants = List.fold_left (fun acc v ->
+        freevars_variant_acc v acc) seen_so_far variants in
+    let from_shared = List.fold_left (fun acc -> function
+        | AField(_, _, value) -> freevars_v_acc value acc ) from_variants shared in
+    MutableStringDict.add from_shared (Ast.name_key namet) namet;
+    from_shared
+  | ADot(_, obj, _)
+  | AColon(_, obj, _)
+  | AGetBang(_, obj, _) -> freevars_v_acc obj seen_so_far
+  | AVal(_, v) -> freevars_v_acc v seen_so_far
+
+and freevars_l e =
+  freevars_l_acc e @@ MutableStringDict.create 60
+
+and freevars_v_acc v seen_so_far =
+  match v with
+  | AId(_, id)
+  | AIdVar(_, id)
+  | AIdLetrec(_, id, _) ->
+    MutableStringDict.add seen_so_far (Ast.name_key id) id;
+    seen_so_far
+  | ASrcloc(_, _)
+  | ANum(_, _)
+  | AStr(_, _)
+  | ABool(_, _)
+  | AUndefined(_) -> seen_so_far
