@@ -72,8 +72,10 @@ let get_field_loc = j_const_id "G"
 let throw_uninitialized = j_const_id "U"
 let source_name = j_const_id "M"
 let undefined = j_const_id "D"
-let _RUNTIME = j_const_id "R"
-let _NAMESPACE = j_const_id "NAMESPACE"
+let _RUNTIME_id = const_id "R"
+let _RUNTIME = JId(_RUNTIME_id)
+let _NAMESPACE_id = const_id "NAMESPACE"
+let _NAMESPACE = JId(_NAMESPACE_id)
 let _THIS = j_const_id "this"
 let _ARGUMENTS = j_const_id "arguments"
 
@@ -348,7 +350,7 @@ let destruct_block =
 let get_exp = fst ||> destruct_exp
 
 (* TODO: Refactor. This entire class is a horrifying behemoth. *)
-class virtual compiler_visitor gl ca r opts = object(self)
+class compiler_visitor gl ca r opts = object(self)
   inherit [DAGUtils.case_results] AstAnf.default_folding_visitor
 
   val options : CompileStructs.compile_options = opts
@@ -1395,3 +1397,233 @@ class remove_useless_if_visitor = object(self)
     | _ -> AIf(l, self#visit_value c, self#visit_expr t, self#visit_expr e)
 
 end
+
+let loc_src = function
+  | Ast.Srcloc.Builtin(s)
+  | Ast.Srcloc.Srcloc(s, _, _, _, _, _, _) -> s
+
+let mk_abbrevs l =
+  let src = loc_src l in
+  let loc = const_id "loc" in
+  let name = const_id "name" in
+  of_list [
+    JVar(const_id "G", rt_field "getFieldLoc");
+    JVar(const_id "U", JFun(of_list [loc; name],
+                            JBlock(ConcatSingleton(
+                                JSExpr(
+                                  JMethod(rt_field "ffi", "throwUninitializedIdMkLoc",
+                                          of_list [JId(loc); JId(name)]))))));
+    JVar(const_id "M", JStr(src));
+    JVar(const_id "D", rt_field "undefined");
+  ]
+
+let import_key i =
+  CompileStructs.Dependency.key @@ AstUtils.import_to_dep_anf i
+
+let compile_program l imports_in prog freevars env =
+  let open AstAnf in
+  let freevars = StringDict.unfreeze freevars in
+  let imports = imports_in |> List.fast_sort @@ fun i1 i2 ->
+    let get_type = function
+      | AImportComplete(_, _, _, t, _, _) -> t in
+    let key = import_key ||> get_type in
+    String.compare (key i1) (key i2) in
+
+  imports |> List.iter (function
+      | AImportComplete(_, _, _, _, vals_name, types_name) ->
+        let rem = MutableStringDict.remove freevars in
+        rem @@ Ast.name_key vals_name;
+        rem @@ Ast.name_key types_name);
+
+  let import_keys_vs, import_keys_ts = (MutableStringDict.create 20, MutableStringDict.create 20) in
+
+  imports |> List.iter (function
+      | AImportComplete(_, vals, typs, _, _, _) ->
+        let add_to dct v = MutableStringDict.add dct (Ast.name_key v) v in
+        vals |> List.iter (add_to import_keys_vs);
+        typs |> List.iter (add_to import_keys_ts));
+
+  let free_ids = MutableStringDict.bindings freevars
+                 |> List.map snd in
+  let module_binds, global_binds =
+    free_ids |> List.partition @@ (function
+        | Ast.SAtom(_, _) -> true
+        | _ -> false) in
+
+  let global_binds =
+    global_binds |> map_list (fun n ->
+        let bind_name =
+          match n with
+          | Ast.SGlobal(s) -> Ast.name_toname n
+          | Ast.STypeGlobal(s) -> type_name @@ Ast.name_toname n
+          | _ -> failwith "Impossible: cannot have non S[Type]Global in compile_program" in
+        JVar(js_id_of n, JMethod(_NAMESPACE, "get", of_list [JStr(bind_name)]))) in
+
+  let module_binds =
+    module_binds |> map_list (fun n ->
+        let bind_name =
+          match n with
+          | Ast.SAtom(_, _) ->
+            let mem = MutableStringDict.mem in
+            let n_key = Ast.name_key n in
+            if mem import_keys_vs n_key then
+              Ast.name_toname n
+            else if mem import_keys_ts n_key then
+              type_name @@ Ast.name_toname n
+            else
+              failwith @@ "Unaware of imported name: " ^ n_key
+          | _ -> failwith "Impossible: cannot have non SAtom in compile_program" in
+        JVar(js_id_of n, JMethod(_NAMESPACE, "get", of_list [JStr(bind_name)]))) in
+
+  let clean_import_name = function
+    | (Ast.SAtom("$import", _) as name) -> fresh_id name
+    | (_ as name) -> js_id_of name in
+  let proc_filename = function
+    | AImportBuiltin(_, name) -> "trove/" ^ name
+    | AImportFile(_, file) -> file
+    | AImportSpecial(_, "my-gdrive", hd :: _) ->
+      "@my-gdrive/" ^ hd
+    | AImportSpecial(_, "shared-gdrive", hd :: (tlhd :: _)) ->
+      "@shared-gdrive/" ^ hd ^ "/" ^ tlhd
+    | AImportSpecial(_, "js-http", hd :: _) ->
+      "@js-http/" ^ hd
+    | AImportSpecial(_, "gdrive-js", hd :: (tlhd :: _)) ->
+      "@gdrive-js/" ^ hd ^ "/" ^ tlhd
+    | AImportSpecial(_, typ, args) ->
+      CompileStructs.Dependency.Dependency(typ, args)
+      |> CompileStructs.Dependency.key in
+
+  let ids, type_ids, filenames =
+    List.fold_right (fun i (acc_id, acc_tid, acc_f) ->
+        match i with
+        | AImportComplete(_, _, _, it, v, t) ->
+          (clean_import_name v) :: acc_id,
+          (clean_import_name t) :: acc_tid,
+          (   proc_filename it) :: acc_f) imports ([],[],[]) in
+
+  let module_id = Ast.name_tosourcestring @@ fresh_id @@ compiler_name @@ loc_src l in
+  let module_ref name = JBracket(rt_field "modules", JStr(name)) in
+  let input_ids = ids |> map_list (function
+      | Ast.SAtom("$import", _) -> js_names "$$import"
+      | (_ as i) -> js_id_of @@ compiler_name @@ Ast.name_toname i) in
+
+  let wrap_modules modules body_name body_fun =
+    let mod_input_names = map_list (fun (_, n, _) -> n) modules in
+    let mod_input_names_list = to_list mod_input_names in
+    let mod_val_ids = List.map (fun (id, _, _) -> id) modules in
+    let module_val = const_id "moduleVal" in
+    let block_vals = List.fold_left2 (fun acc m inp ->
+        match inp with
+        | Ast.SAtom("$$import", _) -> acc
+        | _ -> ConcatSnoc(acc, JVar(m, rt_method "getField" @@ of_list [JId(inp); JStr("values")])))
+        ConcatEmpty mod_val_ids mod_input_names_list in
+    let block_typs = List.fold_left2 (fun acc mt inp ->
+        match inp with
+        | Ast.SAtom("$$import", _) -> acc
+        | _ -> ConcatSnoc(acc, JVar(mt, rt_method "getField" @@ of_list [JId(inp); JStr("types")])))
+        ConcatEmpty type_ids mod_input_names_list in
+    let namespace_init =
+      modules |> map_list (fun (_, input_id, imp) ->
+          match imp with
+          | AImportComplete(_, vals, typs, _, _, _) ->
+            let vals = map_list (fun i -> JStr(Ast.name_toname i)) vals in
+            let typs = map_list (fun i -> JStr(Ast.name_toname i)) typs in
+            JSExpr(JAssign(_NAMESPACE_id, rt_method "addModuleToNamespace" @@ of_list [
+                _NAMESPACE;
+                JList(false, vals);
+                JList(false, typs);
+                JId(input_id);
+              ]))) in
+    let post_bind = of_list [
+        JVar(body_name, body_fun);
+        JReturn(rt_method "safeCall" @@ of_list [
+            JId(body_name);
+            JFun(ConcatSingleton(module_val),
+                 JBlock(of_list [
+                     JSExpr(JBracketAssign(rt_field "modules", JStr(module_id), JId(module_val)));
+                     JReturn(JId(module_val));
+                   ]));
+            JStr("Evaluating " ^ (Ast.name_toname body_name));
+          ])] in
+    JReturn(rt_method "loadModulesNew" @@
+            ConcatSingleton(
+              JFun(mod_input_names,
+                   JBlock(
+                     block_vals
+                     |@> block_typs
+                     |@> namespace_init
+                     |@> module_binds
+                     |@> post_bind
+                   )))) in
+
+  let rec map3 f l1 l2 l3 =
+    match (l1, l2, l3) with
+    | ([], [], []) -> []
+    | ([], _, _)
+    | (_, [], _)
+    | (_, _, []) -> raise @@ Invalid_argument "Lists are of different length"
+    | (hd1 :: tl1, hd2 :: tl2, hd3 :: tl3) ->
+      (f hd1 hd2 hd3) :: (map3 f tl1 tl2 tl3) in
+  let module_specs =
+    map3 (fun i id in_id -> (id, in_id, i)) imports ids (to_list input_ids) in
+
+  let locations = ref ConcatEmpty in
+  let loc_count = ref 0 in
+  let loc_cache = MutableStringDict.create 60 in
+  let _LOCS = const_id "L" in
+
+  let get_loc l =
+    let open MutableStringDict in
+    let as_str = Ast.Srcloc.key l in
+    match lookup loc_cache as_str with
+    | Some(cached) -> cached
+    | None ->
+      let ans = JBracket(JId(_LOCS), JNum(num_of_int !loc_count)) in
+      add loc_cache as_str ans;
+      loc_count := !loc_count + 1;
+      locations := ConcatSnoc(!locations, obj_of_loc l);
+      ans in
+
+  let step = fresh_id @@ compiler_name "step" in
+  let toplevel_name = fresh_id @@ compiler_name "toplevel" in
+  let apploc = fresh_id @@ compiler_name "al" in
+  let resumer = compiler_name "resumer" in
+  let resumer_bind = ABind(l, resumer, Ast.ABlank) in
+  (* CPS-style finish *)
+  let post_visit_cont =
+    (fun visitor ->
+       let visited_body = visitor#compile_fun_body l step toplevel_name [resumer_bind] None prog true in
+       let toplevel_fun = JFun(ConcatSingleton(formal_shadow_name resumer), visited_body) in
+       let define_locations = JVar(_LOCS, JList(true, !locations)) in
+       JApp(JId(const_id "define"),
+            of_list [
+              JList(true, map_list (fun f -> JStr(f)) filenames);
+              JFun(input_ids,
+                   JBlock(ConcatSingleton(
+                       JReturn(JFun(of_list [_RUNTIME_id; _NAMESPACE_id],
+                                    JBlock(of_list [
+                                        JIf(module_ref module_id,
+                                            JBlock(ConcatSingleton(JSExpr(module_ref module_id))),
+                                            JBlock(mk_abbrevs l
+                                                   |@> ConcatSingleton(define_locations)
+                                                   |@> global_binds
+                                                   |@> ConcatSingleton(wrap_modules
+                                                                         module_specs
+                                                                         toplevel_name
+                                                                         toplevel_fun)))]))))))])) in
+  (get_loc, apploc, resumer, post_visit_cont)
+
+let non_splitting_compiler env options =
+  object(self)
+    inherit [JExpr.t] AstAnf.default_folding_visitor
+    method a_program(l, _, imports, body) =
+      let rui_visitor = new remove_useless_if_visitor in
+      let simplified = rui_visitor#visit_expr body in
+      let freevars = AstAnf.freevars_e simplified in
+      let get_loc, apploc, resumer, post_visit_cont =
+        compile_program l imports simplified freevars env in
+      let visitor = new compiler_visitor get_loc apploc resumer options in
+      post_visit_cont visitor
+  end
+
+let splitting_compiler = non_splitting_compiler
