@@ -13,6 +13,9 @@ let old_ast_printer ast =
 
 let ast_printer = Ast.prog_to_string
 
+let list_printer elt_p lst =
+  "[" ^ (PyretUtils.join_str (List.map elt_p lst) "; ") ^ "]"
+
 type ('a, 'b) either =
   | Left of 'a
   | Right of 'b
@@ -87,6 +90,13 @@ let parse name lexbuf =
 let parse_string name s =
   let lexbuf = Lexing.from_string s in
   parse name lexbuf
+
+let test_parse_body ?(preproc=(fun x -> x)) name str exp test_ctxt =
+  match do_parse name (Lexing.from_string str) with
+  | Ast.SProgram(_, _, _, _, Ast.SBlock(_, res)) ->
+    assert_equal exp (preproc res) ~printer:(list_printer Ast.expr_to_string)
+  | Ast.SProgram(_, _, _, _, _) ->
+    failwith "Test error: Non-SBlock body in parse"
 
 let test_parse name str exp test_ctxt =
   assert_equal exp (do_parse name (Lexing.from_string str))

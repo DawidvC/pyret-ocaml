@@ -787,3 +787,71 @@ let resolve_names (p : Ast.program) (initial_env : CompileEnvironment.t) =
   let visited = obj#visit_program p in
   let name_errors, bindings, type_bindings, datatypes = obj#get_info() in
   NameResolution.Resolved(visited, name_errors, bindings, type_bindings, datatypes)
+
+module TestDefs = struct
+  open TestLib
+  open Utils
+  let suite_name = Some "Scope Resolution"
+
+  let d = Ast.dummy_loc
+  let b s = Ast.SBind(d, false, Ast.SName(d, s), Ast.ABlank)
+  let id s = Ast.SId(d, Ast.SName(d, s))
+
+  let test_desugar_scope_block =
+    let dsb b = desugar_scope_block b (LetBinds([])) in
+    let bk e = Ast.SBlock(d, [e]) in
+    let n = None in
+    let thunk e = Ast.SLam(d, [], [], Ast.ABlank, "", bk e, n) in
+    let num n = Ast.SNum(d, BatNum.num_of_int n) in
+    let p_s e = Ast.SApp(d, id "print", [e]) in
+    let compare1 = Ast.SLetExpr(d, [Ast.SLetBind(d, b "x", num 15);
+                                    Ast.SLetBind(d, b "y", num 10)], id "y") in
+    let prog = Ast.SLetrec(d, [
+        Ast.SLetrecBind(d, b "f", thunk @@ num 4);
+        Ast.SLetrecBind(d, b "g", thunk @@ num 5);
+      ], Ast.SApp(d, id "f", [])) in
+    let prog2 = Ast.SBlock(d, [
+        p_s @@ num 1;
+        Ast.SLetrec(d, [
+            Ast.SLetrecBind(d, b "f", thunk @@ num 4);
+            Ast.SLetrecBind(d, b "g", thunk @@ num 5);
+            Ast.SLetrecBind(d, b "h", thunk @@ num 6);
+          ],
+                    Ast.SLetExpr(d, [Ast.SLetBind(d, b "x", num 3)], p_s @@ id "x"))]) in
+    let prog3 = Ast.SBlock(d, [
+        p_s @@ id "x";
+        Ast.SAssign(d, Ast.SName(d, "x"), num 3);
+        p_s @@ id "x";]) in
+    let prog4 = Ast.SLetExpr(d, [Ast.SVarBind(d, b "x", num 10)],
+                             Ast.SLetrec(d, [Ast.SLetrecBind(d, b "f", thunk @@ num 4)],
+                                         Ast.SApp(d, id "f", []))) in
+
+    let test_bs str ast =
+      let test_name = Printf.sprintf "Test desugar_scope_block on \"%s\"" str in
+      let preproc = fun x -> [dsb x] in
+      let do_test = test_parse_body ~preproc:preproc test_name str ast in
+      test_name>::do_test in
+    "Test Scope Block Desugars Correctly">:::[
+      test_bs "x = 15 y = 10 y" [compare1];
+      test_bs "x = 55 var y = 10 y" [
+        Ast.SLetExpr(d, [Ast.SLetBind(d, b "x", num 55);
+                         Ast.SVarBind(d, b "y", num 10)], id "y")
+      ];
+      test_bs "x = 7 print(2) var y = 10 y" [
+        Ast.SLetExpr(d, [Ast.SLetBind(d, b "x", num 7)],
+                     Ast.SBlock(d, [
+                         p_s @@ num 2;
+                         Ast.SLetExpr(d, [Ast.SVarBind(d, b "y", num 10)], id "y")]))
+      ];
+      test_bs "fun f(): 4 end fun g(): 5 end f()" [prog];
+      test_bs "print(1) fun f(): 4 end fun g(): 5 end fun h(): 6 end x = 3 print(x)" [prog2];
+      test_bs "print(x) x := 3 print(x)" [prog3];
+      test_bs "var x = 10 fun f(): 4 end f()" [prog4];
+    ]
+
+  let suite = "Scope Resuolution Tests">:::[
+      test_desugar_scope_block;
+    ]
+end
+
+module Tests = TestLib.MakeSuite(TestDefs)

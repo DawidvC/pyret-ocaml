@@ -38,3 +38,5 @@ let () =
   run_test_tt_main VisitorTest.suite;
   print_std "Running Desugaring Tests...\n";
   run_test_tt_main DesugarTest.suite;
+  (* Internal tests *)
+  ResolveScope.Tests.run_tests print_std;
