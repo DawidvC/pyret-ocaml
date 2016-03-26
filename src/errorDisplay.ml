@@ -28,8 +28,7 @@ let rec display_to_string e stack =
   let not_optional = function
     | Optional(_) -> false
     | _ -> true in
-  let join_str lst sep =
-    List.fold_left (fun acc x -> x^sep^acc) "" lst in
+  let join_str = PyretUtils.join_str in
   match e with
   | Text(str) -> str
   | Loc(l) -> Ast.str_of_loc l

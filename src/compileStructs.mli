@@ -53,7 +53,8 @@ sig
     | CasesSingletonMismatch of string * Ast.loc * bool
     | GivenParameters of string * Ast.loc
     | UnableToInstantiate of Ast.loc
-    | CantTypecheck of string
+    | UnableToInfer of Ast.loc
+    | CantTypecheck of string * Ast.loc
     | Unsupported of string * Ast.loc
     | NoModule of Ast.loc * string
   val render_reason : t -> ErrorDisplay.error_display
