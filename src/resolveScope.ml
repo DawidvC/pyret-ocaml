@@ -340,10 +340,6 @@ class resolve_names_class initial_env =
             | Some(Either.Right(_)) -> failwith "LetrecBind cannot be bound to import" in
           set_to @@ ScopeBinding.LetrecBind(loc, atom, ann, expr)
         | ScopeBinding.LetBind(loc, _, ann, _) ->
-          let expr = match expr with
-            | Some(Either.Left(e)) -> Some(e)
-            | None -> None
-            | Some(Either.Right(_)) -> failwith "LetBind cannot be bound to import" in
           set_to @@ ScopeBinding.LetBind(loc, atom, ann, expr)
         | ScopeBinding.VarBind(loc, _, ann, _) ->
           let expr = match expr with

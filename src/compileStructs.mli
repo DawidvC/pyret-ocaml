@@ -74,7 +74,7 @@ module ScopeBinding :
 sig
   type t =
       LetrecBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
-    | LetBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | LetBind of Ast.loc * Ast.name * Ast.ann * (Ast.expr, Ast.import) PyretUtils.Either.t option
     | VarBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
     | GlobalBind of Ast.loc * Ast.name * Ast.expr option
     | ModuleBind of Ast.loc * Ast.name * Ast.import_type * (Ast.expr, Ast.import) PyretUtils.Either.t option

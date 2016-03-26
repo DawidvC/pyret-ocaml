@@ -49,7 +49,7 @@ end
 module ScopeBinding = struct
   type t =
       LetrecBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
-    | LetBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
+    | LetBind of Ast.loc * Ast.name * Ast.ann * (Ast.expr, Ast.import) PyretUtils.Either.t option
     | VarBind of Ast.loc * Ast.name * Ast.ann * Ast.expr option
     | GlobalBind of Ast.loc * Ast.name * Ast.expr option
     | ModuleBind of Ast.loc * Ast.name * Ast.import_type * (Ast.expr, Ast.import) PyretUtils.Either.t option
@@ -77,11 +77,13 @@ module ScopeBinding = struct
 
   let expr = function
     | LetrecBind(_,_,_,e)
-    | LetBind(_,_,_,e)
     | VarBind(_,_,_,e)
     | GlobalBind(_,_,e) -> e
+    | LetBind(_,_,_,Some(PyretUtils.Either.Left(e)))
     | ModuleBind(_,_,_,Some(PyretUtils.Either.Left(e))) -> Some(e)
+    | LetBind(_,_,_,None)
     | ModuleBind(_,_,_,None) -> None
+    | LetBind(_,_,_,_) -> failwith "Non-expr on LetBind."
     | ModuleBind(_,_,_,_) -> failwith "Non-expr on ModuleBind."
 end
 
