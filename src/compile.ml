@@ -58,7 +58,6 @@ let compile_js_ast phases ast name env libs options =
           let any_errors = named_errors
                            @ (AstUtils.check_unbound env tc_ast)
                            @ (AstUtils.bad_assignments env tc_ast) in
-          (* TODO: Implement Post-Typecheck Desugaring *)
           let dp_ast = DesugarPostTC.desugar_post_tc tc_ast env in
           let cleaned =
             dp_ast
