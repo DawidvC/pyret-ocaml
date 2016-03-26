@@ -283,7 +283,7 @@ class resolve_names_class initial_env =
             let atom = Ast.global_names s in
             let binding = make_binding l atom in
             MutableStringDict.add bindings (Ast.name_key atom) binding;
-            { atom = atom; env = env }
+            { atom = atom; env = (StringDict.add s binding env) }
           | Ast.SUnderscore(l) ->
             let atom = Ast.global_names "$underscore" in
             MutableStringDict.add bindings (Ast.name_key atom) (make_binding l atom);
