@@ -23,5 +23,9 @@ run_tests: $(TEST)/run_tests.ml $(TEST)/pPrintTest.ml $(TEST)/testUtils.ml $(TES
 	$(BUILD) test/run_tests.native
 	mv run_tests.native run_tests
 
+show-parse: $(SRC)/showParse.ml
+	$(BUILD) src/showParse.native
+	mv showParse.native show-parse
+
 clean:
 	$(BUILD) -clean
