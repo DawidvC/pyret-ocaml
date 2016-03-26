@@ -19,7 +19,7 @@ lex: $(SRC)/lexer.mll $(SRC)/parser.dyp $(SRC)/lex.ml
 	$(BUILD) src/lex.native
 	mv lex.native lex
 
-run_tests: $(TEST)/run_tests.ml $(TEST)/pPrintTest.ml $(TEST)/utils.ml $(TEST)/lexerTest.ml $(TEST)/parserTest.ml $(TEST)/desugarTest.ml
+run_tests: $(TEST)/run_tests.ml $(TEST)/pPrintTest.ml $(TEST)/testUtils.ml $(TEST)/lexerTest.ml $(TEST)/parserTest.ml $(TEST)/desugarTest.ml
 	$(BUILD) test/run_tests.native
 	mv run_tests.native run_tests
 

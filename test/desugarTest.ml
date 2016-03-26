@@ -1,5 +1,5 @@
 open OUnit2
-open Utils
+open TestUtils
 
 class unglobal = object(self)
   inherit Ast.default_map_visitor

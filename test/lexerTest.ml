@@ -1,7 +1,7 @@
 open Lexer
 open Parser
 open OUnit2
-open Utils
+open TestUtils
 
 (** Test cases for lexing *)
 

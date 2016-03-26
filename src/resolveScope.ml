@@ -790,7 +790,7 @@ let resolve_names (p : Ast.program) (initial_env : CompileEnvironment.t) =
 
 module TestDefs = struct
   open TestLib
-  open Utils
+  open TestUtils
   let suite_name = Some "Scope Resolution"
 
   let d = Ast.dummy_loc

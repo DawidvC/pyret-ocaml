@@ -25,7 +25,7 @@ let lst_printer = function
 
 let after_visit s l =
   let do_test ctx =
-    let parsed = Utils.do_parse "visitor" (Lexing.from_string s) in
+    let parsed = TestUtils.do_parse "visitor" (Lexing.from_string s) in
     let visitor = new collector_visitor in
     visitor#clear_nums();
     let _ = visitor#visit_program parsed in
