@@ -888,3 +888,40 @@ let get_typed_provides (typed : TypeCheckStructs.typed) (uri : uri)
           MSD.freeze val_typs, MSD.freeze alias_typs, MSD.freeze data_typs in
         CompileStructs.Provides.Provides(uri,val_typs,alias_typs,data_typs)
       | _ -> failwith "Incompelete provide in get_typed_provides"
+
+module TestDefs = struct
+  open TestLib
+  open TestUtils
+  let suite_name = Some("AST Utilities")
+
+  let d = Ast.dummy_loc
+
+  let test_flatten_single_blocks =
+    let preproc body =
+      (new flatten_single_blocks)#visit_expr body in
+    let test_fsb str expr =
+      let test_name = Printf.sprintf "Test flatten_single_block on \"%s\"" str in
+      let do_test = test_parse_body_block test_name str expr ~preproc:preproc in
+      test_name>::do_test in
+    "Test blocks are flattened correctly">:::[
+      test_fsb "x" @@ Ast.SId(d, Ast.SName(d, "x"));
+    ]
+
+  let test_check_unbound =
+    let preproc prog = check_unbound CompileStructs.no_builtins prog in
+    let test_cub str len =
+      let test_name = Printf.sprintf "Test check_unbound on \"%s\"" str in
+      let unbound = preproc @@ do_parse_str "test" str in
+      let do_check test_ctx = assert_equal len @@ List.length unbound in
+      test_name>::do_check in
+    "Test unbound identifiers are correctly found">:::[
+      test_cub "x" 1;
+    ]
+
+  let suite = "AST Utility Tests">:::[
+      test_flatten_single_blocks;
+      test_check_unbound;
+    ]
+end
+
+module Tests = TestLib.MakeSuite(TestDefs)

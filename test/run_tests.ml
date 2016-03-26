@@ -40,3 +40,6 @@ let () =
   run_test_tt_main DesugarTest.suite;
   (* Internal tests *)
   ResolveScope.Tests.run_tests print_std;
+  AstUtils.Tests.run_tests print_std;
+  Desugar.Tests.run_tests print_std;
+  AstAnf.Tests.run_tests print_std;

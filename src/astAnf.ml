@@ -663,3 +663,36 @@ and freevars_prog = function
         | AImportComplete(_, values, types, _, _, _) ->
           (values @ types) |> List.iter (MutableStringDict.remove body_vars ||> Ast.name_key));
     MutableStringDict.freeze body_vars
+
+module TestDefs = struct
+  open TestLib
+  open TestUtils
+
+  let suite_name = Some("ANF Functionality")
+  let d = Ast.dummy_loc
+  let n = Ast.global_names
+
+  let test_freevars_e =
+    let test_fve str to_search exp =
+      let test_name =
+        Printf.sprintf "Test variables in \"%s\" are properly found" str in
+      let do_test test_ctx =
+        assert_equal exp (List.map fst @@ StringDict.bindings (freevars_e to_search))
+          ~printer:(list_printer (Printf.sprintf "\"%s\"")) in
+      test_name>::do_test in
+    let x = n "x" in
+    let y = n "y" in
+    "Test free variables are properly found">:::[
+      test_fve
+        ""
+        (ALet(d, ABind(d, x, Ast.ABlank), AVal(d, ANum(d, BatNum.num_of_int 4)),
+              ALettable(d, AVal(d, AId(d, y)))))
+        [Ast.name_key y];
+    ]
+
+  let suite = "ANF Functionality Tests">:::[
+      test_freevars_e;
+    ]
+end
+
+module Tests = TestLib.MakeSuite(TestDefs)

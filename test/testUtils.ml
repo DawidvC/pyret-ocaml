@@ -81,6 +81,8 @@ let do_parse name lexbuf : Ast.program  =
     failwith (sprintf "lexical error at %s"
                 (string_of_position lexbuf.lex_curr_p))
 
+let do_parse_str name s = do_parse name @@ Lexing.from_string s
+
 let parse name lexbuf =
   try
     Right(do_parse name lexbuf)
@@ -92,14 +94,19 @@ let parse_string name s =
   parse name lexbuf
 
 let test_parse_body ?(preproc=(fun x -> x)) name str exp test_ctxt =
-  match do_parse name (Lexing.from_string str) with
+  match do_parse_str name str with
   | Ast.SProgram(_, _, _, _, Ast.SBlock(_, res)) ->
     assert_equal exp (preproc res) ~printer:(list_printer Ast.expr_to_string)
   | Ast.SProgram(_, _, _, _, _) ->
     failwith "Test error: Non-SBlock body in parse"
 
+let test_parse_body_block ?(preproc=(fun x -> x)) name str exp test_ctxt =
+  match do_parse_str name str with
+  | Ast.SProgram(_, _, _, _, block) ->
+    assert_equal exp (preproc block) ~printer:Ast.expr_to_string
+
 let test_parse ?(preproc=(fun x -> x)) name str exp test_ctxt =
-  assert_equal exp (preproc (do_parse name (Lexing.from_string str)))
+  assert_equal exp (preproc (do_parse_str name str))
     ~printer:ast_printer
 
 let test_parse_err name str errmsg test_ctxt =

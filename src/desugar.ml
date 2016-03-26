@@ -340,3 +340,86 @@ and desugar_expr (expr : A.expr) =
                               desugar_ann ann, "", desugar_expr body, None) in
     A.SApp(l,desugar_expr iter, the_function::values)
   | A.SCheck (l,name,body,keyword_check) -> A.SCheck(l,name,desugar_expr body, keyword_check)
+
+module TestDefs = struct
+  open TestLib
+  open TestUtils
+  let suite_name = Some("Desugaring")
+
+  let d = Ast.dummy_loc
+  let n s = Ast.SGlobal(s)
+  let id s = Ast.SId(d, Ast.SName(d, s))
+  let under = Ast.SId(d, Ast.SUnderscore(d))
+
+  let test_ds_curry =
+    let test_lam_len str ds_ed len =
+      let test_name = Printf.sprintf "Test \"%s\" desugars properly" str in
+      let do_test test_ctx =
+        (match ds_ed with
+         | Ast.SLam(_, _, args, _, _, _, _) -> (List.length args) = len
+         | _ -> false)
+        |> assert_bool "test" in
+      test_name>::do_test in
+    let test_is str ds_ed expr =
+      let test_name = Printf.sprintf "Test \"%s\" desugars properly" str in
+      let do_test test_ctx = assert_equal ds_ed expr ~printer:Ast.expr_to_string in
+      test_name>::do_test in
+    let ds_ed =
+      ds_curry d (id "f") [under; id "x"] in
+    let ds_ed2 =
+      ds_curry d (id "f") [under; under] in
+    let ds_ed3 =
+      ds_curry d (id "f") [id "x"; id "y"] in
+    let ds_ed4 =
+      ds_curry d (Ast.SDot(d, under, "f")) [id "x"] in
+    "Test underscores desugar into lambdas">:::[
+      test_lam_len "f(_, x)" ds_ed  1;
+      test_lam_len "f(_, _)" ds_ed2 2;
+      test_is "f(x, y)" ds_ed3 @@ Ast.SApp(d, id "f", [id "x"; id "y"]);
+      test_lam_len "_.f(x)" ds_ed4 1;
+    ]
+
+  let test_desugar_expr =
+    let unglobal = object(self)
+      inherit Ast.default_map_visitor
+      method s_global(s) = Ast.SName(d, s)
+      method s_atom(base, _) = Ast.SName(d, base)
+    end in
+    let p str =
+      match do_parse_str "test" str with
+      | Ast.SProgram(_, _, _, _, body) -> body in
+    let ds expr = unglobal#visit_expr @@ desugar_expr expr in
+    let one = Ast.SNum(d, BatNum.num_of_int 1) in
+    let two = Ast.SNum(d, BatNum.num_of_int 2) in
+
+    let test_ds to_ds exp =
+      let test_name = Printf.sprintf "Test \"%s\" desugars correctly" to_ds in
+      let ds_ed = ds @@ p to_ds in
+      let do_test test_ctx = assert_equal exp ds_ed ~printer:Ast.expr_to_string in
+      test_name>::do_test in
+
+    let prog2 =
+      Ast.SBlock(d,
+                 [Ast.SApp(d, Ast.SDot(d, Ast.SId(d, Ast.SName(d, "list")), "make3"),
+                           [one; two; Ast.SApp(d, id "_plus", [one; two])])]) in
+    let prog3 =
+      Ast.SBlock(d,
+                 [Ast.SApp(d, Ast.SDot(d, Ast.SId(d, Ast.SName(d, "list")), "make"),
+                           [Ast.SArray(d,
+                                       [one; two; Ast.SApp(d, id "_plus", [one; two]);
+                                        one; two; Ast.SApp(d, id "_plus", [two; one])])])]) in
+    let prog4 = p "map(lam(elt): _plus(elt, 1) end, l)" in
+
+    "Test desugaring is done correctly">:::[
+      test_ds "[list: 1,2,1 + 2]" prog2;
+      test_ds "[list: 1,2,1 + 2,1,2,2 + 1]" prog3;
+      test_ds "for map(elt from l): elt + 1 end" prog4;
+    ]
+
+  let suite = "Desugaring Tests">:::[
+      test_ds_curry;
+      test_desugar_expr;
+    ]
+end
+
+module Tests = TestLib.MakeSuite(TestDefs)
