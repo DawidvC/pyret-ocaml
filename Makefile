@@ -11,13 +11,13 @@ BUILD=ocamlbuild -use-ocamlfind
 SRC=src
 TEST=test
 
-.PHONY: deps
-deps:
-	opam install oUnit dypgen extlib ANSITerminal batteries sexplib
-
 main: $(SRC)/lexer.mll $(SRC)/parser.dyp $(SRC)/main.ml $(SRC)/ast.ml $(SRC)/astAnf.ml $(SRC)/pPrint.ml
 	$(BUILD) src/main.native
 	mv main.native main
+
+.PHONY: deps
+deps:
+	opam install oUnit dypgen extlib ANSITerminal batteries sexplib
 
 lex: $(SRC)/lexer.mll $(SRC)/parser.dyp $(SRC)/lex.ml
 	$(BUILD) src/lex.native
