@@ -1,7 +1,4 @@
-module N = AstAnf (* Kludge to make compile for now *)
-module D = Desugar
-module ED = ErrorDisplay
-module LA = ListAux
+open CompileStructs
 let string_ref = ref ""
 let process_argument s =
   if s = "" then raise (Arg.Bad "missing input file name")
@@ -15,7 +12,17 @@ let pprinter (v : Ast.program) = let pprinted = PPrint.pretty (Ast.tosource v) 4
   List.fold_right (fun f acc -> f ^ "\n" ^ acc) pprinted ""
 
 let input_file = !string_ref
-let lexbuf = Lexing.from_channel (Pervasives.open_in input_file)
-let prog = fst (List.hd (Parser.program Lexer.token lexbuf))
 let () =
-  Printf.printf "%s" (pprinter prog)
+  let compiled = TstCompile.compile_js_file
+      Compile.CompilationPhase.Start input_file "testing"
+      standard_builtins
+      standard_imports
+      default_compile_options in
+  match compiled with
+  | CompileResult.Ok(ccp) ->
+    Codegen.Js.OfPyret.pyret_to_js_pretty 80 ccp
+    |> Printf.printf "%s"
+  | CompileResult.Err(errs) ->
+    ValueSkeleton.of_list CompileError.to_vs errs ()
+    |> ValueSkeleton.render
+    |> Printf.printf "Errors:\n%s"
