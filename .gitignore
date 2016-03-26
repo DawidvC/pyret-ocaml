@@ -1,5 +1,6 @@
 _build
-run_tests
+run-tests
+show-parse
 main
 lex
 *.native
