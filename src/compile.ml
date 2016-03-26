@@ -82,3 +82,16 @@ let compile_js trace code name env libs options =
   (if options.CompileStructs.collect_all then
     ret := Phase("Parsed", (fun () -> Sexplib.Sexp.to_string_hum @@ Ast.sexp_of_program ast), !ret));
   compile_js_ast !ret ast name env libs options
+
+let compile_js_file trace file name env libs options =
+  let open CompilationPhase in
+  let ret = ref trace in
+  (* FIXME: The lexing/parsing bit should be abstracted out elsewhere *)
+  let lexbuf = Lexing.from_channel @@ Pervasives.open_in file in
+  lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with
+    Lexing.pos_fname = file;
+  };
+  let ast = fst @@ List.hd @@ Parser.program Lexer.token lexbuf in
+  (if options.CompileStructs.collect_all then
+    ret := Phase("Parsed", (fun () -> Sexplib.Sexp.to_string_hum @@ Ast.sexp_of_program ast), !ret));
+  compile_js_ast !ret ast name env libs options

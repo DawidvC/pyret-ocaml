@@ -283,7 +283,7 @@ let rec find_steps_to stmts step =
       (match right with
        | JExpr.JLabel(label) -> ConcatList.ConcatSnoc(acc, label)
        | _ -> failwith "Non-JLabel on right-hand-side of binop")
-    | JSExpr(JExpr.JAssign(_, _)) -> failwith "Should not happen"
+    | JSExpr(JExpr.JAssign(name, _)) when name = step -> failwith "Should not happen"
     | JSExpr(_)
     | JReturn(_)
     | JTryCatch(_, _, _)

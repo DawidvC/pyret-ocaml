@@ -502,6 +502,10 @@ class check_unbound_class initial_env = object(self)
   method add_error err = errors := err :: !errors
   method get_errors () = !errors
 
+  (* Need to *NOT* visit RHS of defined values/types, since they might not be in env *)
+  method s_defined_value _ = true
+  method s_defined_type _ = true
+
   method handle_id this_id =
     match this_id with
     | Ast.SId(_,id)

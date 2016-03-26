@@ -95,6 +95,12 @@ module Srcloc = struct
            start.Lexing.pos_bol, ending.Lexing.pos_lnum, ending.Lexing.pos_cnum,
            ending.Lexing.pos_bol)
 
+  let same_file s1 s2 =
+    match (s1, s2) with
+    | (Builtin(m1), Builtin(m2))
+    | (Srcloc(m1, _, _, _, _, _, _), Srcloc(m2, _, _, _, _, _, _)) -> m1 = m2
+    | _ -> false
+
   (** Renders the given source location as a string, showing the file name as well if specified *)
   let format show_file = function
     | Builtin(s) -> "<builtin "^s^">"
