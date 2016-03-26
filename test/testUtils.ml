@@ -98,8 +98,8 @@ let test_parse_body ?(preproc=(fun x -> x)) name str exp test_ctxt =
   | Ast.SProgram(_, _, _, _, _) ->
     failwith "Test error: Non-SBlock body in parse"
 
-let test_parse name str exp test_ctxt =
-  assert_equal exp (do_parse name (Lexing.from_string str))
+let test_parse ?(preproc=(fun x -> x)) name str exp test_ctxt =
+  assert_equal exp (preproc (do_parse name (Lexing.from_string str)))
     ~printer:ast_printer
 
 let test_parse_err name str errmsg test_ctxt =

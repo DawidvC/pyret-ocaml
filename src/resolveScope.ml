@@ -796,13 +796,13 @@ module TestDefs = struct
   let d = Ast.dummy_loc
   let b s = Ast.SBind(d, false, Ast.SName(d, s), Ast.ABlank)
   let id s = Ast.SId(d, Ast.SName(d, s))
+  let num n = Ast.SNum(d, BatNum.num_of_int n)
 
   let test_desugar_scope_block =
     let dsb b = desugar_scope_block b (LetBinds([])) in
     let bk e = Ast.SBlock(d, [e]) in
     let n = None in
     let thunk e = Ast.SLam(d, [], [], Ast.ABlank, "", bk e, n) in
-    let num n = Ast.SNum(d, BatNum.num_of_int n) in
     let p_s e = Ast.SApp(d, id "print", [e]) in
     let compare1 = Ast.SLetExpr(d, [Ast.SLetBind(d, b "x", num 15);
                                     Ast.SLetBind(d, b "y", num 10)], id "y") in
@@ -849,8 +849,29 @@ module TestDefs = struct
       test_bs "var x = 10 fun f(): 4 end f()" [prog4];
     ]
 
+
+  let test_desugar_scope =
+    let checks = Ast.SApp(d, Ast.SDot(d, AstUtils.checkers d, "results"), []) in
+    let ds prog = desugar_scope prog CompileStructs.standard_builtins in
+
+    let compare1 =
+      Ast.SProgram(d, Ast.SProvideNone(d), Ast.SProvideTypesNone(d), [],
+                   Ast.SLetExpr(d, [
+                       Ast.SLetBind(d, b "x", num 10)],
+                                Ast.SModule(d, id "nothing", [], [], id "x", [], checks))) in
+    let test_ds str prog =
+      let test_name = Printf.sprintf "Test desugar_scope on \"%s\"" str in
+      let preproc = ds in
+      let do_test = test_parse test_name str prog ~preproc:preproc in
+      test_name>::do_test in
+
+    "Test Scope Desugars Correctly">:::[
+      test_ds "provide x end x = 10 nothing" compare1;
+    ]
+
   let suite = "Scope Resuolution Tests">:::[
       test_desugar_scope_block;
+      test_desugar_scope;
     ]
 end
 
